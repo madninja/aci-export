@@ -1,0 +1,21 @@
+[package]
+name = "aci-export"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aci-export"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+anyhow = "1"
+clap = {version = "4", features = ["derive"]}
+config = {version="0", default-features=false, features=["toml"]}
+chrono = {version = "0", features = ["serde"] }
+serde = {version = "1", features = ["derive"] }
+serde_json = "1"
+futures = "0"
+tokio = { version = "1", features = ["full"] }
+sqlx = {version = "0", features = [ "runtime-tokio-rustls", "mysql", "chrono" ] }
+csv = "1"
