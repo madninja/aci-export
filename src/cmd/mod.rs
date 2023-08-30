@@ -1,7 +1,9 @@
 use crate::Result;
 use futures::stream::{BoxStream, TryStreamExt};
 
+pub mod mailchimp;
 pub mod members;
+pub mod users;
 
 pub fn print_json<T: ?Sized + serde::Serialize>(value: &T) -> Result {
     println!("{}", serde_json::to_string_pretty(value)?);

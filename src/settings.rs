@@ -8,6 +8,7 @@ use std::path::Path;
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
+    pub mailchimp: MailchimpSettings,
 }
 
 impl Settings {
@@ -34,4 +35,9 @@ impl DatabaseSettings {
             .context("opening database")?;
         Ok(pool)
     }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MailchimpSettings {
+    pub api_key: String,
 }

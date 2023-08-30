@@ -1,4 +1,8 @@
-use aci_export::{cmd::members, settings::Settings, Result};
+use aci_export::{
+    cmd::{mailchimp, members, users},
+    settings::Settings,
+    Result,
+};
 use clap::Parser;
 use std::{path::PathBuf, process};
 
@@ -17,6 +21,8 @@ pub struct Cli {
 #[derive(Debug, clap::Subcommand)]
 pub enum Cmd {
     Members(members::Cmd),
+    Users(users::Cmd),
+    Mailchimp(mailchimp::Cmd),
 }
 
 #[tokio::main]
@@ -34,5 +40,7 @@ async fn run(cli: Cli) -> Result {
     let settings = Settings::new(&cli.config)?;
     match cli.cmd {
         Cmd::Members(cmd) => cmd.run(&settings).await,
+        Cmd::Users(cmd) => cmd.run(&settings).await,
+        Cmd::Mailchimp(cmd) => cmd.run(&settings).await,
     }
 }
