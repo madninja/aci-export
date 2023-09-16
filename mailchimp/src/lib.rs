@@ -22,7 +22,7 @@ pub type Stream<T> = Pin<Box<dyn StdStream<Item = Result<T>> + Send>>;
 
 mod error;
 pub mod health;
-pub mod list;
+pub mod lists;
 
 pub use error::{Error, Result};
 
@@ -31,6 +31,8 @@ pub const DEFAULT_TIMEOUT: u64 = 10;
 /// A utility constant to pass an empty query slice to the various client fetch
 /// functions
 pub const NO_QUERY: &[&str; 0] = &[""; 0];
+/// Default number of items to return in a query
+pub const DEFAULT_QUERY_COUNT: u32 = 1000;
 
 #[derive(Debug, Clone)]
 pub struct BasicAuth {
@@ -157,13 +159,6 @@ impl Client {
         T: 'static + DeserializeOwned + Send,
         Q: Serialize + ?Sized,
     {
-        let test = self
-            .request(Method::GET, path)
-            .unwrap()
-            .query(query)
-            .build()
-            .unwrap();
-        println!("test: {:?}", test);
         match self.request(Method::GET, path) {
             Ok(builder) => builder
                 .query(query)
@@ -177,37 +172,31 @@ impl Client {
                     Err(e) => future::err(Error::from(e)).boxed(),
                 })
                 .boxed(),
-            Err(e) => future::err(Error::from(e)).boxed(),
+            Err(e) => future::err(e).boxed(),
         }
     }
 
-    pub fn fetch_stream<Q, R>(&self, path: &str, query: &Q) -> Stream<R::Item>
+    pub fn fetch_stream<Q, R>(&self, path: &str, mut query: Q) -> Stream<R::Item>
     where
-        R: PagedResult + 'static,
+        R: PagedResponse + 'static,
         Q: PagedQuery + 'static + Serialize,
     {
-        const PER_PAGE: u32 = 100;
         let client = self.clone();
         let path = path.to_string();
 
-        let mut query = query.clone();
-        query.set_count(PER_PAGE);
-        query.set_offset(0);
         self.fetch::<R, _>(&path, &query)
             .map_ok(move |data| {
-                println!("data: {:?}", data);
-                let mut query = query.clone();
+                // let mut query = query.clone();
                 query.inc_offset(data.len() as u32);
                 stream::try_unfold(
                     (data, client, path, query),
-                    |(mut data, client, path, query)| async move {
+                    |(mut data, client, path, mut query)| async move {
                         match data.pop() {
                             Some(entry) => Ok(Some((entry, (data, client, path, query)))),
                             None => {
                                 let mut data = client.fetch::<R, _>(&path, &query).await?;
                                 let data_len = data.len();
                                 if data_len > 0 {
-                                    let mut query = query.clone();
                                     query.inc_offset(data_len as u32);
                                     let entry = data.pop().unwrap();
                                     Ok(Some((entry, (data, client, path, query))))
@@ -241,25 +230,33 @@ impl Client {
                     Err(e) => future::err(error::Error::from(e)).boxed(),
                 })
                 .boxed(),
-            Err(e) => future::err(Error::from(e)).boxed(),
+            Err(e) => future::err(e).boxed(),
         }
     }
 }
 
 pub trait PagedQuery: Clone + Send + Serialize + Sync {
+    fn default_fields() -> &'static [&'static str];
     fn set_count(&mut self, count: u32);
     fn offset(&self) -> u32;
     fn set_offset(&mut self, offset: u32);
+
+    fn default_fields_string() -> String {
+        Self::default_fields().join(",")
+    }
     fn inc_offset(&mut self, inc: u32) {
         self.set_offset(self.offset() + inc)
     }
 }
 
-pub trait PagedResult: DeserializeOwned + Send + Sync + Debug {
+pub trait PagedResponse: DeserializeOwned + Send + Sync + Debug {
     type Item: DeserializeOwned + Send + Sync + Debug;
 
     fn pop(&mut self) -> Option<Self::Item>;
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 pub mod deserialize_null_string {

@@ -17,6 +17,7 @@ impl Cmd {
 #[derive(Debug, clap::Subcommand)]
 pub enum MailchimpCommand {
     Lists(Lists),
+    Members(Members),
     Ping(Ping),
     // List(List),
 }
@@ -25,6 +26,7 @@ impl MailchimpCommand {
     pub async fn run(&self, settings: &Settings) -> Result {
         match self {
             Self::Lists(cmd) => cmd.run(settings).await,
+            Self::Members(cmd) => cmd.run(settings).await,
             Self::Ping(cmd) => cmd.run(settings).await,
             // Self::List(cmd) => cmd.run(settings).await,
         }
@@ -37,7 +39,22 @@ pub struct Lists {}
 impl Lists {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let lists = mailchimp::list::all(&client, &["lists.id", "lists.name"])
+        let lists = mailchimp::lists::all(&client)
+            .try_collect::<Vec<_>>()
+            .await?;
+        print_json(&lists)
+    }
+}
+
+#[derive(Debug, clap::Args)]
+pub struct Members {
+    list_id: String,
+}
+
+impl Members {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
+        let lists = mailchimp::lists::members::all(&client, &self.list_id)
             .try_collect::<Vec<_>>()
             .await?;
         print_json(&lists)
