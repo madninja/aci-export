@@ -18,6 +18,7 @@ impl Cmd {
 pub enum MailchimpCommand {
     Lists(Lists),
     Members(Members),
+    MergeFields(MergeFields),
     Ping(Ping),
     // List(List),
 }
@@ -27,6 +28,7 @@ impl MailchimpCommand {
         match self {
             Self::Lists(cmd) => cmd.run(settings).await,
             Self::Members(cmd) => cmd.run(settings).await,
+            Self::MergeFields(cmd) => cmd.run(settings).await,
             Self::Ping(cmd) => cmd.run(settings).await,
             // Self::List(cmd) => cmd.run(settings).await,
         }
@@ -39,7 +41,7 @@ pub struct Lists {}
 impl Lists {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let lists = mailchimp::lists::all(&client)
+        let lists = mailchimp::lists::all(&client, Default::default())
             .try_collect::<Vec<_>>()
             .await?;
         print_json(&lists)
@@ -54,7 +56,22 @@ pub struct Members {
 impl Members {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let lists = mailchimp::lists::members::all(&client, &self.list_id)
+        let lists = mailchimp::lists::members::all(&client, &self.list_id, Default::default())
+            .try_collect::<Vec<_>>()
+            .await?;
+        print_json(&lists)
+    }
+}
+
+#[derive(Debug, clap::Args)]
+pub struct MergeFields {
+    list_id: String,
+}
+
+impl MergeFields {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
+        let lists = mailchimp::lists::merge_fields::all(&client, &self.list_id, Default::default())
             .try_collect::<Vec<_>>()
             .await?;
         print_json(&lists)

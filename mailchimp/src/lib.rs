@@ -64,7 +64,9 @@ pub enum AuthMode {
 
 impl AuthMode {
     pub fn new_basic_auth(key: &str) -> Result<Self> {
-        let encoded = base64::encode(format!("username:{key}").as_bytes());
+        use base64::Engine;
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(format!("username:{key}").as_bytes());
         let auth_header = HeaderValue::from_str(&format!("Basic {encoded}"))
             .map_err(|_| Error::MalformedAPIKey)?;
 
