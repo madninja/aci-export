@@ -1,14 +1,12 @@
 use crate::{Error, Result};
-use mailchimp_api::Client;
 use serde::{Deserialize, Serialize};
 
 pub mod client {
     use super::*;
 
-    pub fn from_api_key(api_key: &str) -> Client {
-        let mut client = mailchimp_api::Client::new("", "", "", api_key, "");
-        client.with_host_override("https://us9.api.mailchimp.com/3.0");
-        client
+    pub fn from_api_key(api_key: &str) -> Result<mailchimp::Client> {
+        let auth = mailchimp::AuthMode::new_basic_auth(api_key)?;
+        Ok(mailchimp::Client::new(auth))
     }
 }
 
@@ -30,7 +28,7 @@ impl From<mailchimp_api::types::Lists> for List {
     }
 }
 
-pub async fn lists(client: &Client) -> Result<Vec<List>> {
+pub async fn lists(client: &mailchimp::Client) -> Result<Vec<List>> {
     let client_lists = client.lists();
 
     const PAGE_SIZE: i64 = 100;

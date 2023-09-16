@@ -1,0 +1,18 @@
+[package]
+name = "mailchimp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+base64 = "0"
+thiserror = "1"
+reqwest = { version = "0", default-features = false, features = [
+    "gzip",
+    "json",
+    "rustls-tls",
+] }
+url = "*"
+chrono = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
