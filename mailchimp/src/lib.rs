@@ -237,6 +237,28 @@ impl Client {
         }
     }
 
+    pub fn patch<T, R>(&self, path: &str, json: &T) -> Future<R>
+    where
+        T: Serialize + ?Sized,
+        R: 'static + DeserializeOwned + std::marker::Send,
+    {
+        match self.request(Method::PATCH, path) {
+            Ok(builder) => builder
+                .json(json)
+                .send()
+                .map_err(error::Error::from)
+                .and_then(|response| match response.error_for_status() {
+                    Ok(result) => {
+                        let data: Future<R> = result.json().map_err(error::Error::from).boxed();
+                        data
+                    }
+                    Err(e) => future::err(error::Error::from(e)).boxed(),
+                })
+                .boxed(),
+            Err(e) => future::err(e).boxed(),
+        }
+    }
+
     pub fn delete(&self, path: &str) -> Future<()> {
         match self.request(Method::DELETE, path) {
             Ok(builder) => builder
@@ -343,8 +365,11 @@ pub mod deserialize_null_string {
     }
 }
 
-pub fn is_zero_i32(num: &i32) -> bool {
-    *num == 0
+pub fn is_zero<T>(value: &T) -> bool
+where
+    T: PartialEq + Default,
+{
+    *value == T::default()
 }
 
 pub mod deserialize_null_i32 {

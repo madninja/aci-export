@@ -1,6 +1,6 @@
 use crate::{
     deserialize_null_string, error::Error, paged_query_impl, paged_response_impl,
-    query_default_impl, Client, Result, Stream,
+    query_default_impl, Client, Result, Stream, NO_QUERY,
 };
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +9,15 @@ pub fn all(client: &Client, list_id: &str, query: MergeFieldsQuery) -> Stream<Me
         &format!("/3.0/lists/{list_id}/merge-fields"),
         query,
     )
+}
+
+pub async fn get(client: &Client, list_id: &str, merge_id: u32) -> Result<MergeField> {
+    client
+        .fetch(
+            &format!("/3.0/lists/{list_id}/merge-fields/{merge_id}"),
+            NO_QUERY,
+        )
+        .await
 }
 
 pub async fn create(client: &Client, list_id: &str, field: MergeField) -> Result<MergeField> {
@@ -23,11 +32,25 @@ pub async fn delete(client: &Client, list_id: &str, merge_id: &str) -> Result<()
         .await
 }
 
+pub async fn update(
+    client: &Client,
+    list_id: &str,
+    merge_id: &str,
+    field: MergeField,
+) -> Result<()> {
+    client
+        .patch(
+            &format!("/3.0/lists/{list_id}/merge-fields/{merge_id}",),
+            &field,
+        )
+        .await
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct MergeField {
     #[serde(
         default,
-        skip_serializing_if = "crate::is_zero_i32",
+        skip_serializing_if = "crate::is_zero",
         deserialize_with = "crate::deserialize_null_i32::deserialize"
     )]
     pub merge_id: i32,

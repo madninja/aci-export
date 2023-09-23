@@ -92,19 +92,28 @@ impl MergeFieldsCommand {
     }
 }
 
-/// List the merge fields for a given audience list.
+/// List one or all the merge fields for a given audience list.
 #[derive(Debug, clap::Args)]
 pub struct MergeFieldsList {
+    /// The list ID to get merge fields for.
     list_id: String,
+    /// The merge field ID of a specific field to get
+    merge_id: Option<u32>,
 }
 
 impl MergeFieldsList {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let lists = mailchimp::merge_fields::all(&client, &self.list_id, Default::default())
-            .try_collect::<Vec<_>>()
-            .await?;
-        print_json(&lists)
+        if let Some(merge_id) = self.merge_id {
+            let merge_field =
+                mailchimp::merge_fields::get(&client, &self.list_id, merge_id).await?;
+            print_json(&merge_field)
+        } else {
+            let lists = mailchimp::merge_fields::all(&client, &self.list_id, Default::default())
+                .try_collect::<Vec<_>>()
+                .await?;
+            print_json(&lists)
+        }
     }
 }
 
