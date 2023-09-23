@@ -65,16 +65,98 @@ impl Members {
 
 #[derive(Debug, clap::Args)]
 pub struct MergeFields {
-    list_id: String,
+    #[command(subcommand)]
+    cmd: MergeFieldsCommand,
 }
 
 impl MergeFields {
     pub async fn run(&self, settings: &Settings) -> Result {
+        self.cmd.run(settings).await
+    }
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum MergeFieldsCommand {
+    List(MergeFieldsList),
+    Create(MergeFieldsCreate),
+    Delete(MergeFieldsDelete),
+}
+
+impl MergeFieldsCommand {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        match self {
+            Self::List(cmd) => cmd.run(settings).await,
+            Self::Create(cmd) => cmd.run(settings).await,
+            Self::Delete(cmd) => cmd.run(settings).await,
+        }
+    }
+}
+
+/// List the merge fields for a given audience list.
+#[derive(Debug, clap::Args)]
+pub struct MergeFieldsList {
+    list_id: String,
+}
+
+impl MergeFieldsList {
+    pub async fn run(&self, settings: &Settings) -> Result {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let lists = mailchimp::lists::merge_fields::all(&client, &self.list_id, Default::default())
+        let lists = mailchimp::merge_fields::all(&client, &self.list_id, Default::default())
             .try_collect::<Vec<_>>()
             .await?;
         print_json(&lists)
+    }
+}
+
+/// Create a merge field for a given audience list.
+#[derive(Debug, clap::Args)]
+pub struct MergeFieldsCreate {
+    /// The audience list ID.
+    pub list_id: String,
+
+    /// The type of the merge field.
+    pub merge_type: mailchimp::merge_fields::MergeType,
+
+    /// The tag for the merge field. Usually a short string that is used as a
+    /// mail merge field.
+    pub tag: String,
+
+    /// The descriptive name of the merge field
+    pub name: String,
+}
+
+impl MergeFieldsCreate {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
+        let merge_field = mailchimp::merge_fields::create(
+            &client,
+            &self.list_id,
+            mailchimp::merge_fields::MergeField {
+                tag: self.tag.clone(),
+                name: self.name.clone(),
+                r#type: self.merge_type.clone(),
+                ..Default::default()
+            },
+        )
+        .await?;
+        print_json(&merge_field)
+    }
+}
+
+#[derive(Debug, clap::Args)]
+pub struct MergeFieldsDelete {
+    /// The audience list ID.
+    pub list_id: String,
+
+    /// The merge field ID.
+    pub merge_id: String,
+}
+
+impl MergeFieldsDelete {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
+        mailchimp::merge_fields::delete(&client, &self.list_id, &self.merge_id).await?;
+        Ok(())
     }
 }
 

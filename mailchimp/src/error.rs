@@ -13,6 +13,8 @@ pub enum Error {
     Value(serde_json::Value),
     #[error("unexpected or invalid number {0}")]
     Number(String),
+    #[error("invalid merge type {0}")]
+    InvalidMergeType(String),
 }
 
 impl Error {

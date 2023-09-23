@@ -23,6 +23,7 @@ pub type Stream<T> = Pin<Box<dyn StdStream<Item = Result<T>> + Send>>;
 mod error;
 pub mod health;
 pub mod lists;
+pub mod merge_fields;
 
 pub use error::{Error, Result};
 
@@ -235,6 +236,20 @@ impl Client {
             Err(e) => future::err(e).boxed(),
         }
     }
+
+    pub fn delete(&self, path: &str) -> Future<()> {
+        match self.request(Method::DELETE, path) {
+            Ok(builder) => builder
+                .send()
+                .map_err(error::Error::from)
+                .and_then(|response| match response.error_for_status() {
+                    Ok(_) => future::ok(()).boxed(),
+                    Err(e) => future::err(error::Error::from(e)).boxed(),
+                })
+                .boxed(),
+            Err(e) => future::err(e).boxed(),
+        }
+    }
 }
 
 pub trait PagedQuery: Clone + Send + Serialize + Sync {
@@ -261,6 +276,60 @@ pub trait PagedResponse: DeserializeOwned + Send + Sync + Debug {
     }
 }
 
+macro_rules! paged_query_impl {
+    ($query_type:ident, $default_fields:expr) => {
+        impl crate::PagedQuery for $query_type {
+            fn default_fields() -> &'static [&'static str] {
+                $default_fields
+            }
+
+            fn set_count(&mut self, count: u32) {
+                self.count = count;
+            }
+
+            fn offset(&self) -> u32 {
+                self.offset
+            }
+
+            fn set_offset(&mut self, offset: u32) {
+                self.offset = offset;
+            }
+        }
+    };
+}
+
+macro_rules! paged_response_impl {
+    ($response_type:ident, $item_field:ident, $item_type:ident) => {
+        impl crate::PagedResponse for $response_type {
+            type Item = $item_type;
+
+            fn pop(&mut self) -> Option<$item_type> {
+                self.$item_field.pop()
+            }
+            fn len(&self) -> usize {
+                self.$item_field.len()
+            }
+        }
+    };
+}
+
+macro_rules! query_default_impl {
+    ($query_type:ident) => {
+        impl Default for $query_type {
+            fn default() -> Self {
+                use crate::PagedQuery;
+                Self {
+                    fields: Self::default_fields_string(),
+                    count: crate::DEFAULT_QUERY_COUNT,
+                    offset: 0,
+                }
+            }
+        }
+    };
+}
+
+pub(crate) use {paged_query_impl, paged_response_impl, query_default_impl};
+
 pub mod deserialize_null_string {
     use serde::{self, Deserialize, Deserializer};
 
@@ -271,6 +340,74 @@ pub mod deserialize_null_string {
         let s = String::deserialize(deserializer).unwrap_or_default();
 
         Ok(s)
+    }
+}
+
+pub fn is_zero_i32(num: &i32) -> bool {
+    *num == 0
+}
+
+pub mod deserialize_null_i32 {
+    use super::I32Visitor;
+    use serde::{self, Deserializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<i32, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = deserializer.deserialize_i32(I32Visitor).unwrap_or_default();
+
+        Ok(s)
+    }
+}
+
+struct I32Visitor;
+
+impl<'de> serde::de::Visitor<'de> for I32Visitor {
+    type Value = i32;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("an integer between -2^31 and 2^31")
+    }
+
+    fn visit_i8<E>(self, value: i8) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(value as i32)
+    }
+
+    fn visit_i16<E>(self, value: i16) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(value as i32)
+    }
+
+    fn visit_i32<E>(self, value: i32) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(value)
+    }
+
+    fn visit_i64<E>(self, value: i64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        use std::i32;
+        if value >= i64::from(i32::MIN) && value <= i64::from(i32::MAX) {
+            Ok(value as i32)
+        } else {
+            Err(E::custom(format!("i32 out of range: {value}")))
+        }
+    }
+
+    fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(value as i32)
     }
 }
 
