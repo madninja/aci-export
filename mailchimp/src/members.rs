@@ -29,12 +29,13 @@ pub async fn for_email(client: &Client, list_id: &str, email: &str) -> Result<Me
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MemberStatus {
-    #[default]
     Subscribed,
     Unsubscribed,
     Cleaned,
     Pending,
     Transactional,
+    #[default]
+    Noop,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -57,9 +58,10 @@ pub struct Member {
         deserialize_with = "deserialize_null_string::deserialize"
     )]
     pub full_name: String,
-    pub status: MemberStatus,
-    #[serde(default, skip_serializing_if = "crate::is_default")]
-    pub merge_fields: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<MemberStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_fields: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -77,11 +79,6 @@ pub struct MembersResponse {
 query_default_impl!(MembersQuery);
 paged_query_impl!(
     MembersQuery,
-    &[
-        "members.id",
-        "members.email_address",
-        "members.full_name",
-        "members.status"
-    ]
+    &["members.id", "members.email_address", "members.full_name",]
 );
 paged_response_impl!(MembersResponse, members, Member);
