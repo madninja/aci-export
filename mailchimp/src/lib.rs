@@ -23,6 +23,7 @@ pub type Stream<T> = Pin<Box<dyn StdStream<Item = Result<T>> + Send>>;
 mod error;
 pub mod health;
 pub mod lists;
+pub mod members;
 pub mod merge_fields;
 
 pub use error::{Error, Result};
@@ -276,13 +277,17 @@ impl Client {
 
 pub trait PagedQuery: Clone + Send + Serialize + Sync {
     fn default_fields() -> &'static [&'static str];
+    fn fields(&self) -> &str;
+    fn set_fields(&mut self, fields: String);
+    fn append_fields(&mut self, fields: &[&str]) {
+        self.set_fields(format!("{},{}", self.fields(), fields.join(",")));
+    }
+
     fn set_count(&mut self, count: u32);
+
     fn offset(&self) -> u32;
     fn set_offset(&mut self, offset: u32);
 
-    fn default_fields_string() -> String {
-        Self::default_fields().join(",")
-    }
     fn inc_offset(&mut self, inc: u32) {
         self.set_offset(self.offset() + inc)
     }
@@ -303,6 +308,14 @@ macro_rules! paged_query_impl {
         impl crate::PagedQuery for $query_type {
             fn default_fields() -> &'static [&'static str] {
                 $default_fields
+            }
+
+            fn fields(&self) -> &str {
+                &self.fields
+            }
+
+            fn set_fields(&mut self, fields: String) {
+                self.fields = fields;
             }
 
             fn set_count(&mut self, count: u32) {
@@ -341,7 +354,7 @@ macro_rules! query_default_impl {
             fn default() -> Self {
                 use crate::PagedQuery;
                 Self {
-                    fields: Self::default_fields_string(),
+                    fields: Self::default_fields().join(","),
                     count: crate::DEFAULT_QUERY_COUNT,
                     offset: 0,
                 }
@@ -365,7 +378,7 @@ pub mod deserialize_null_string {
     }
 }
 
-pub fn is_zero<T>(value: &T) -> bool
+pub fn is_default<T>(value: &T) -> bool
 where
     T: PartialEq + Default,
 {
@@ -434,17 +447,4 @@ impl<'de> serde::de::Visitor<'de> for I32Visitor {
     {
         Ok(value as i32)
     }
-}
-
-#[cfg(test)]
-fn get_test_client() -> Client {
-    use std::{env, thread, time};
-    const USER_AGENT: &str = "helium-api-test/0.1.0";
-    const BASE_URL: &str = "https://api.helium.io/v1";
-    let duration = time::Duration::from_millis(env::var("TEST_DELAY_MS").map_or(0, |v| {
-        v.parse::<u64>()
-            .expect("TEST_DELAY_MS cannot be parsed as u64")
-    }));
-    thread::sleep(duration);
-    Client::new_with_base_url(BASE_URL.into(), USER_AGENT)
 }

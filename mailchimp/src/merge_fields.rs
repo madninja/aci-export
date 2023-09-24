@@ -50,7 +50,7 @@ pub async fn update(
 pub struct MergeField {
     #[serde(
         default,
-        skip_serializing_if = "crate::is_zero",
+        skip_serializing_if = "crate::is_default",
         deserialize_with = "crate::deserialize_null_i32::deserialize"
     )]
     pub merge_id: i32,
