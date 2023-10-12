@@ -5,6 +5,7 @@ use crate::{
 };
 use futures::TryStreamExt;
 
+/// Commands on audience lists.
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
     #[command(subcommand)]

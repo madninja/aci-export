@@ -8,6 +8,7 @@ use mailchimp::merge_fields::MergeField;
 use serde_json::json;
 use std::collections::HashMap;
 
+/// Commands on the merge fields of an audience list.
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
     #[command(subcommand)]
