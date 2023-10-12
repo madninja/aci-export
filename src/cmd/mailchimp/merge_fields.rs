@@ -1,6 +1,12 @@
-use crate::{cmd::print_json, settings::Settings, Result};
+use crate::{
+    cmd::{mailchimp::read_toml, print_json},
+    settings::Settings,
+    Result,
+};
 use futures::TryStreamExt;
-use mailchimp::{self};
+use mailchimp::merge_fields::MergeField;
+use serde_json::json;
+use std::collections::HashMap;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
@@ -19,6 +25,7 @@ pub enum MergeFieldsCommand {
     List(List),
     Create(Create),
     Delete(Delete),
+    Sync(Sync),
 }
 
 impl MergeFieldsCommand {
@@ -27,6 +34,7 @@ impl MergeFieldsCommand {
             Self::List(cmd) => cmd.run(settings).await,
             Self::Create(cmd) => cmd.run(settings).await,
             Self::Delete(cmd) => cmd.run(settings).await,
+            Self::Sync(cmd) => cmd.run(settings).await,
         }
     }
 }
@@ -79,7 +87,7 @@ impl Create {
         let merge_field = mailchimp::merge_fields::create(
             &client,
             &self.list_id,
-            mailchimp::merge_fields::MergeField {
+            MergeField {
                 tag: self.tag.clone(),
                 name: self.name.clone(),
                 r#type: self.merge_type.clone(),
@@ -105,5 +113,87 @@ impl Delete {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
         mailchimp::merge_fields::delete(&client, &self.list_id, &self.merge_id).await?;
         Ok(())
+    }
+}
+
+#[derive(Debug, clap::Args)]
+pub struct Sync {
+    /// The audience list ID.
+    pub list_id: String,
+
+    /// The merge field definition file to configure for the audience
+    pub merge_fields: String,
+}
+
+impl Sync {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        #[derive(Debug, serde::Deserialize, serde::Serialize)]
+        struct MergeFieldsConfig {
+            merge_fields: Vec<MergeField>,
+        }
+        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
+        let target: HashMap<String, MergeField> =
+            read_toml::<MergeFieldsConfig>(&self.merge_fields)?
+                .merge_fields
+                .into_iter()
+                .map(|entry| (entry.tag.clone(), entry))
+                .collect();
+
+        let current: HashMap<String, MergeField> =
+            mailchimp::merge_fields::all(&client, &self.list_id, Default::default())
+                .map_ok(|entry| (entry.tag.clone(), entry))
+                .try_collect()
+                .await?;
+
+        fn collect_tags(fields: &[(String, MergeField)]) -> Vec<String> {
+            fields
+                .iter()
+                .map(|(_, field)| field.tag.clone())
+                .collect::<Vec<_>>()
+        }
+
+        let (to_delete, _): (Vec<(String, MergeField)>, Vec<(String, MergeField)>) = current
+            .clone()
+            .into_iter()
+            .partition(|(key, _)| !target.contains_key(key));
+
+        let (to_add, target_remaining): (Vec<(String, MergeField)>, Vec<(String, MergeField)>) =
+            target
+                .into_iter()
+                .partition(|(key, _)| !current.contains_key(key));
+
+        let deleted = collect_tags(&to_delete);
+        for (_, field) in to_delete {
+            mailchimp::merge_fields::delete(&client, &self.list_id, &field.merge_id.to_string())
+                .await?;
+        }
+
+        let added = collect_tags(&to_add);
+        for (_, field) in to_add {
+            mailchimp::merge_fields::create(&client, &self.list_id, field).await?;
+        }
+
+        let mut updated = vec![];
+        for (_, mut field) in target_remaining.into_iter() {
+            let current = current.get(&field.tag).unwrap();
+            field.merge_id = current.merge_id;
+            if field != *current {
+                updated.push(field.tag.clone());
+                mailchimp::merge_fields::update(
+                    &client,
+                    &self.list_id,
+                    &current.merge_id.to_string(),
+                    field,
+                )
+                .await?;
+            }
+        }
+
+        let json = json!({
+            "added": added,
+            "deleted": deleted,
+            "updated": updated,
+        });
+        print_json(&json)
     }
 }

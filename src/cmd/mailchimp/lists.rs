@@ -1,5 +1,8 @@
-use crate::{cmd::print_json, settings::Settings, Result};
-use config::{Config, File};
+use crate::{
+    cmd::{mailchimp::read_toml, print_json},
+    settings::Settings,
+    Result,
+};
 use futures::TryStreamExt;
 
 #[derive(Debug, clap::Args)]
@@ -63,11 +66,9 @@ pub struct Create {
 impl Create {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let config: mailchimp::lists::List = Config::builder()
-            .add_source(File::with_name(&self.config))
-            .build()
-            .and_then(|config| config.try_deserialize())?;
-        let list = mailchimp::lists::create(&client, &config).await?;
+        let list_config: mailchimp::lists::List = read_toml(&self.config)?;
+        let list = mailchimp::lists::create(&client, &list_config).await?;
+
         print_json(&list)
     }
 }

@@ -1,0 +1,44 @@
+[[merge_fields]]
+tag = "UID"
+name = "User ID"
+type = "number"
+
+[[merge_fields]]
+tag = "FNAME"
+name = "First Name"
+type = "text"
+
+[[merge_fields]]
+tag = "LNAME"
+name = "Last Name"
+type = "text"
+
+[[merge_fields]]
+tag = "PRIMARY"
+name = "Primary"
+type = "text"
+
+[[merge_fields]]
+tag = "BDAY"
+name = "Birthday"
+type = "birthday"
+
+[[merge_fields]]
+tag = "STATE"
+name = "State"
+type = "text"
+
+[[merge_fields]]
+tag = "COUNTRY"
+name = "Country"
+type = "text"
+
+[[merge_fields]]
+tag = "JOIN"
+name = "Join Date"
+type = "date"
+
+[[merge_fields]]
+tag = "EXPIRE"
+name = "Expiration Date"
+type = "date"

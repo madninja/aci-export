@@ -37,3 +37,11 @@ impl MailchimpCommand {
         }
     }
 }
+
+pub fn read_toml<'de, T: serde::Deserialize<'de>>(path: &str) -> Result<T> {
+    let config = config::Config::builder()
+        .add_source(config::File::with_name(path))
+        .build()
+        .and_then(|config| config.try_deserialize())?;
+    Ok(config)
+}

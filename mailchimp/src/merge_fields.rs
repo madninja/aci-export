@@ -37,7 +37,7 @@ pub async fn update(
     list_id: &str,
     merge_id: &str,
     field: MergeField,
-) -> Result<()> {
+) -> Result<MergeField> {
     client
         .patch(
             &format!("/3.0/lists/{list_id}/merge-fields/{merge_id}",),
