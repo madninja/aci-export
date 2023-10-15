@@ -23,6 +23,10 @@ pub async fn delete(client: &Client, list_id: &str) -> Result<()> {
     client.delete(&format!("/3.0/lists/{list_id}")).await
 }
 
+pub async fn update(client: &Client, list_id: &str, list: &List) -> Result<List> {
+    client.patch(&format!("/3.0/lists/{list_id}",), &list).await
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct List {
     #[serde(

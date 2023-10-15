@@ -23,6 +23,8 @@ pub enum ListsCommand {
     List(List),
     Create(Create),
     Delete(Delete),
+    Info(Info),
+    Sync(Sync),
 }
 
 impl ListsCommand {
@@ -31,6 +33,8 @@ impl ListsCommand {
             Self::List(cmd) => cmd.run(settings).await,
             Self::Create(cmd) => cmd.run(settings).await,
             Self::Delete(cmd) => cmd.run(settings).await,
+            Self::Info(cmd) => cmd.run(settings).await,
+            Self::Sync(cmd) => cmd.run(settings).await,
         }
     }
 }
@@ -86,5 +90,37 @@ impl Delete {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
         mailchimp::lists::delete(&client, &self.list_id).await?;
         Ok(())
+    }
+}
+
+/// Get information about an audience list.
+#[derive(Debug, clap::Args)]
+pub struct Info {
+    /// The list ID of the list to get
+    list_id: String,
+}
+
+impl Info {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
+        let list = mailchimp::lists::get(&client, &self.list_id).await?;
+        print_json(&list)
+    }
+}
+
+/// Sync an audience with a configuration file.
+#[derive(Debug, clap::Args)]
+pub struct Sync {
+    /// The name of a file with the list configuration
+    config: String,
+}
+
+impl Sync {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
+        let list_config: mailchimp::lists::List = read_toml(&self.config)?;
+        let list = mailchimp::lists::update(&client, &list_config.id, &list_config).await?;
+
+        print_json(&list)
     }
 }
