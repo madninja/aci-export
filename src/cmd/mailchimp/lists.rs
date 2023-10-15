@@ -24,7 +24,7 @@ pub enum ListsCommand {
     Create(Create),
     Delete(Delete),
     Info(Info),
-    Sync(Sync),
+    Update(Update),
 }
 
 impl ListsCommand {
@@ -34,7 +34,7 @@ impl ListsCommand {
             Self::Create(cmd) => cmd.run(settings).await,
             Self::Delete(cmd) => cmd.run(settings).await,
             Self::Info(cmd) => cmd.run(settings).await,
-            Self::Sync(cmd) => cmd.run(settings).await,
+            Self::Update(cmd) => cmd.run(settings).await,
         }
     }
 }
@@ -110,12 +110,12 @@ impl Info {
 
 /// Sync an audience with a configuration file.
 #[derive(Debug, clap::Args)]
-pub struct Sync {
+pub struct Update {
     /// The name of a file with the list configuration
     config: String,
 }
 
-impl Sync {
+impl Update {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
         let list_config: mailchimp::lists::List = read_toml(&self.config)?;

@@ -16,7 +16,7 @@ pub async fn get(client: &Client, list_id: &str) -> Result<List> {
 }
 
 pub async fn create(client: &Client, list: &List) -> Result<List> {
-    client.post(&format!("/3.0/lists"), list).await
+    client.post("/3.0/lists", list).await
 }
 
 pub async fn delete(client: &Client, list_id: &str) -> Result<()> {

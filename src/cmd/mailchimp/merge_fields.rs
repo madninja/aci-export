@@ -26,7 +26,7 @@ pub enum MergeFieldsCommand {
     List(List),
     Create(Create),
     Delete(Delete),
-    Sync(Sync),
+    Update(Update),
 }
 
 impl MergeFieldsCommand {
@@ -35,7 +35,7 @@ impl MergeFieldsCommand {
             Self::List(cmd) => cmd.run(settings).await,
             Self::Create(cmd) => cmd.run(settings).await,
             Self::Delete(cmd) => cmd.run(settings).await,
-            Self::Sync(cmd) => cmd.run(settings).await,
+            Self::Update(cmd) => cmd.run(settings).await,
         }
     }
 }
@@ -118,7 +118,7 @@ impl Delete {
 }
 
 #[derive(Debug, clap::Args)]
-pub struct Sync {
+pub struct Update {
     /// The audience list ID.
     pub list_id: String,
 
@@ -126,12 +126,14 @@ pub struct Sync {
     pub merge_fields: String,
 }
 
-impl Sync {
+impl Update {
     pub async fn run(&self, settings: &Settings) -> Result {
         #[derive(Debug, serde::Deserialize, serde::Serialize)]
         struct MergeFieldsConfig {
             merge_fields: Vec<MergeField>,
         }
+        type TaggedMergeField = (String, MergeField);
+
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
         let target: HashMap<String, MergeField> =
             read_toml::<MergeFieldsConfig>(&self.merge_fields)?
@@ -146,22 +148,21 @@ impl Sync {
                 .try_collect()
                 .await?;
 
-        fn collect_tags(fields: &[(String, MergeField)]) -> Vec<String> {
+        fn collect_tags(fields: &[TaggedMergeField]) -> Vec<String> {
             fields
                 .iter()
                 .map(|(_, field)| field.tag.clone())
                 .collect::<Vec<_>>()
         }
 
-        let (to_delete, _): (Vec<(String, MergeField)>, Vec<(String, MergeField)>) = current
+        let (to_delete, _): (Vec<TaggedMergeField>, Vec<TaggedMergeField>) = current
             .clone()
             .into_iter()
             .partition(|(key, _)| !target.contains_key(key));
 
-        let (to_add, target_remaining): (Vec<(String, MergeField)>, Vec<(String, MergeField)>) =
-            target
-                .into_iter()
-                .partition(|(key, _)| !current.contains_key(key));
+        let (to_add, target_remaining): (Vec<TaggedMergeField>, Vec<TaggedMergeField>) = target
+            .into_iter()
+            .partition(|(key, _)| !current.contains_key(key));
 
         let deleted = collect_tags(&to_delete);
         for (_, field) in to_delete {
