@@ -1,5 +1,5 @@
 use aci_export::{
-    cmd::{mailchimp, members, users},
+    cmd::{ddb, mailchimp},
     settings::Settings,
     Result,
 };
@@ -20,8 +20,7 @@ pub struct Cli {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Cmd {
-    Members(members::Cmd),
-    Users(users::Cmd),
+    Ddb(ddb::Cmd),
     Mailchimp(mailchimp::Cmd),
 }
 
@@ -39,8 +38,7 @@ async fn main() -> Result {
 async fn run(cli: Cli) -> Result {
     let settings = Settings::new(&cli.config)?;
     match cli.cmd {
-        Cmd::Members(cmd) => cmd.run(&settings).await,
-        Cmd::Users(cmd) => cmd.run(&settings).await,
+        Cmd::Ddb(cmd) => cmd.run(&settings).await,
         Cmd::Mailchimp(cmd) => cmd.run(&settings).await,
     }
 }

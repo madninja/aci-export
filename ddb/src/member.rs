@@ -6,16 +6,20 @@ pub struct Member {
     #[sqlx(flatten)]
     pub primary: User,
     #[sqlx(flatten, try_from = "PartnerUser")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub partner: Option<User>,
 }
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 pub struct Address {
     street_address: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     street_address_2: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     zip_code: Option<String>,
     city: String,
     state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     country: Option<String>,
 }
 
@@ -25,6 +29,7 @@ struct PartnerUser {
     partner_email: Option<String>,
     partner_first_name: Option<String>,
     partner_last_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     partner_birthday: Option<chrono::NaiveDate>,
 }
 

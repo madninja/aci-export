@@ -23,7 +23,6 @@ pub enum MailchimpCommand {
     Members(members::Cmd),
     MergeFields(merge_fields::Cmd),
     Ping(ping::Cmd),
-    // List(List),
 }
 
 impl MailchimpCommand {
@@ -33,7 +32,6 @@ impl MailchimpCommand {
             Self::Members(cmd) => cmd.run(settings).await,
             Self::MergeFields(cmd) => cmd.run(settings).await,
             Self::Ping(cmd) => cmd.run(settings).await,
-            // Self::List(cmd) => cmd.run(settings).await,
         }
     }
 }

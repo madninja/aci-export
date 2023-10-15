@@ -9,7 +9,7 @@ path = "src/main.rs"
 doc = false
 
 [workspace]
-members = ["db", "mailchimp"]
+members = ["ddb", "mailchimp"]
 
 [workspace.dependencies]
 chrono = { version = "*", features = ["serde"] }
@@ -25,7 +25,7 @@ config = { version = "0", default-features = false, features = ["toml"] }
 tokio = { version = "1", features = ["full"] }
 csv = "1"
 mailchimp-api = { git = "https://github.com/oxidecomputer/third-party-api-clients.git" }
-db = { package = "aci-db", path = "db" }
+ddb = { package = "aci-ddb", path = "ddb" }
 mailchimp = { package = "mailchimp", path = "mailchimp" }
 chrono = { workspace = true }
 futures = { workspace = true }

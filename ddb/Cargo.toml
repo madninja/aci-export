@@ -1,5 +1,5 @@
 [package]
-name = "aci-db"
+name = "aci-ddb"
 version = "0.1.0"
 edition = "2021"
 

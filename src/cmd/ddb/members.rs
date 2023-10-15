@@ -1,11 +1,6 @@
-use crate::{
-    cmd::print_json,
-    member::{Address, Member},
-    settings::Settings,
-    user::User,
-    Result,
-};
+use crate::{cmd::print_json, settings::Settings, Result};
 use anyhow::anyhow;
+use ddb::{Address, Member, User};
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
