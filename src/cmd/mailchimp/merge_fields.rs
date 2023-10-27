@@ -1,12 +1,14 @@
 use crate::{
-    cmd::{mailchimp::read_toml, print_json},
+    cmd::{
+        mailchimp::{read_toml, MergeFieldsConfig},
+        print_json,
+    },
     settings::Settings,
     Result,
 };
 use futures::TryStreamExt;
-use mailchimp::merge_fields::MergeField;
+use mailchimp::merge_fields::{MergeField, MergeFields};
 use serde_json::json;
-use std::collections::HashMap;
 
 /// Commands on the merge fields of an audience list.
 #[derive(Debug, clap::Args)]
@@ -128,23 +130,16 @@ pub struct Update {
 
 impl Update {
     pub async fn run(&self, settings: &Settings) -> Result {
-        #[derive(Debug, serde::Deserialize, serde::Serialize)]
-        struct MergeFieldsConfig {
-            merge_fields: Vec<MergeField>,
-        }
         type TaggedMergeField = (String, MergeField);
 
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let target: HashMap<String, MergeField> =
-            read_toml::<MergeFieldsConfig>(&self.merge_fields)?
-                .merge_fields
-                .into_iter()
-                .map(|entry| (entry.tag.clone(), entry))
-                .collect();
+        let target: MergeFields = read_toml::<MergeFieldsConfig>(&self.merge_fields)?
+            .merge_fields
+            .into_iter()
+            .collect();
 
-        let current: HashMap<String, MergeField> =
+        let current: MergeFields =
             mailchimp::merge_fields::all(&client, &self.list_id, Default::default())
-                .map_ok(|entry| (entry.tag.clone(), entry))
                 .try_collect()
                 .await?;
 

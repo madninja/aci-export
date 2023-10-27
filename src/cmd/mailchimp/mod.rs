@@ -43,3 +43,14 @@ pub fn read_toml<'de, T: serde::Deserialize<'de>>(path: &str) -> Result<T> {
         .and_then(|config| config.try_deserialize())?;
     Ok(config)
 }
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub(crate) struct MergeFieldsConfig {
+    merge_fields: Vec<mailchimp::merge_fields::MergeField>,
+}
+
+impl From<MergeFieldsConfig> for mailchimp::merge_fields::MergeFields {
+    fn from(config: MergeFieldsConfig) -> Self {
+        config.merge_fields.into_iter().collect()
+    }
+}

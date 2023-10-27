@@ -1,9 +1,14 @@
 use crate::{
-    cmd::{mailchimp::read_toml, print_json},
+    cmd::{
+        mailchimp::{read_toml, MergeFieldsConfig},
+        print_json,
+    },
     settings::Settings,
-    Result,
+    Error, Result,
 };
-use futures::TryStreamExt;
+use futures::{TryFutureExt, TryStreamExt};
+use sqlx::MySqlPool;
+use std::sync::Arc;
 
 /// Commands on audience lists.
 #[derive(Debug, clap::Args)]
@@ -25,6 +30,7 @@ pub enum ListsCommand {
     Delete(Delete),
     Info(Info),
     Update(Update),
+    Sync(Sync),
 }
 
 impl ListsCommand {
@@ -35,6 +41,7 @@ impl ListsCommand {
             Self::Delete(cmd) => cmd.run(settings).await,
             Self::Info(cmd) => cmd.run(settings).await,
             Self::Update(cmd) => cmd.run(settings).await,
+            Self::Sync(cmd) => cmd.run(settings).await,
         }
     }
 }
@@ -108,7 +115,7 @@ impl Info {
     }
 }
 
-/// Sync an audience with a configuration file.
+/// Udpate an audience to match a configuration file.
 #[derive(Debug, clap::Args)]
 pub struct Update {
     /// The name of a file with the list configuration
@@ -122,5 +129,145 @@ impl Update {
         let list = mailchimp::lists::update(&client, &list_config.id, &list_config).await?;
 
         print_json(&list)
+    }
+}
+
+/// Sync the members or an audience from a database.
+#[derive(Debug, clap::Args)]
+pub struct Sync {
+    /// The name of a file with the list configuration
+    config: String,
+
+    /// The merge field definition file
+    fields: String,
+
+    /// The email address of a single member to sync
+    #[clap(long)]
+    member: Option<String>,
+}
+
+impl Sync {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        use futures::stream::StreamExt;
+        let client = Arc::new(mailchimp::client::from_api_key(
+            &settings.mailchimp.api_key,
+        )?);
+        let db = settings.database.connect().await?;
+        let list_config: &mailchimp::lists::List = &read_toml(&self.config)?;
+        let merge_fields: &mailchimp::merge_fields::MergeFields =
+            &read_toml::<MergeFieldsConfig>(&self.fields)?.into();
+
+        let stream: ddb::Stream<ddb::members::Member> = if let Some(email) = &self.member {
+            let db_member = ddb::members::by_email(&db, email)
+                .await?
+                .ok_or(anyhow::anyhow!("Member not found: {email}"))?;
+            futures::stream::once(async { Ok(db_member) }).boxed()
+        } else {
+            ddb::members::all(&db)
+        };
+        stream
+            .map_err(Error::from)
+            .map_ok(|member| (client.clone(), db.clone(), member))
+            .try_for_each_concurrent(10, |(client, db, member)| async move {
+                sync_member(&client, db, list_config, merge_fields, member).await
+            })
+            .await?;
+        Ok(())
+    }
+}
+
+async fn sync_member(
+    client: &mailchimp::Client,
+    db: MySqlPool,
+    list_config: &mailchimp::lists::List,
+    merge_fields: &mailchimp::merge_fields::MergeFields,
+    member: ddb::members::Member,
+) -> Result {
+    let address = ddb::members::mailing_address_by_uid(&db, member.primary.uid).await?;
+    let primary = to_member(&member, &address, &member.primary, merge_fields).await?;
+
+    if let Some(parnter_user) = &member.partner {
+        let mut partner = to_member(&member, &address, parnter_user, merge_fields).await?;
+        if let Some(ref mut merge_fields) = partner.merge_fields {
+            merge_fields.insert("PRIMARY".into(), member.primary.email.clone().into());
+        }
+        if mailchimp::members::is_valid_email(&partner.email_address) {
+            // println!("Partner {}", partner.email_address);
+            mailchimp::members::upsert(client, &list_config.id, &partner.email_address, &partner)
+                .map_ok(|_| ())
+                .or_else(|err| handle_mailchimp_error("partner", parnter_user, err))
+                .await?;
+        }
+    }
+
+    if mailchimp::members::is_valid_email(&primary.email_address) {
+        // println!("Primary {}", primary.email_address);
+        mailchimp::members::upsert(client, &list_config.id, &primary.email_address, &primary)
+            .map_ok(|_| ())
+            .or_else(|err| handle_mailchimp_error("primary", &member.primary, err))
+            .await?;
+    }
+
+    Ok(())
+}
+
+async fn to_member(
+    member: &ddb::members::Member,
+    address: &Option<ddb::members::Address>,
+    user: &ddb::users::User,
+    merge_fields: &mailchimp::merge_fields::MergeFields,
+) -> Result<mailchimp::members::Member> {
+    let user_fields: Vec<mailchimp::merge_fields::MergeFieldValue> = [
+        merge_fields.to_value("FNAME", user.first_name.as_ref()),
+        merge_fields.to_value("LNAME", user.last_name.as_ref()),
+        merge_fields.to_value("UID", user.uid),
+        merge_fields.to_value("BDAY", user.birthday),
+        merge_fields.to_value("JOIN", member.join_date),
+        merge_fields.to_value("EXPIRE", member.expiration_date),
+    ]
+    .into_iter()
+    .filter_map(|value| value.map_err(Error::from).transpose())
+    .chain(address_to_values(address, merge_fields).into_iter())
+    .collect::<Result<Vec<mailchimp::merge_fields::MergeFieldValue>>>()?;
+    Ok(mailchimp::members::Member {
+        id: mailchimp::members::member_id(&user.email),
+        email_address: user.email.clone(),
+        merge_fields: Some(user_fields.into_iter().collect()),
+        status_if_new: Some(mailchimp::members::MemberStatus::Subscribed),
+        ..Default::default()
+    })
+}
+
+fn address_to_values(
+    address: &Option<ddb::members::Address>,
+    merge_fields: &mailchimp::merge_fields::MergeFields,
+) -> Vec<Result<mailchimp::merge_fields::MergeFieldValue>> {
+    let Some(address) = address.as_ref() else {
+        return vec![];
+    };
+
+    vec![
+        merge_fields.to_value("STATE", address.state.as_ref()),
+        merge_fields.to_value("COUNTRY", address.country.as_ref()),
+    ]
+    .into_iter()
+    .filter_map(|value| value.map_err(Error::from).transpose())
+    .collect()
+}
+
+async fn handle_mailchimp_error(
+    kind: &'static str,
+    user: &ddb::users::User,
+    err: mailchimp::Error,
+) -> mailchimp::Result {
+    match err {
+        mailchimp::Error::Mailchimp(err) if err.status == 400 => {
+            eprintln!(
+                "Mailchimp {} email: {} error: {}",
+                kind, user.email, err.detail
+            );
+            Ok(())
+        }
+        other => Err(other),
     }
 }

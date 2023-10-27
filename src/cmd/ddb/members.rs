@@ -1,6 +1,6 @@
 use crate::{cmd::print_json, settings::Settings, Result};
 use anyhow::anyhow;
-use ddb::{Address, Member, User};
+use ddb::members;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
@@ -37,13 +37,11 @@ pub struct Email {
 impl Email {
     pub async fn run(&self, settings: &Settings) -> Result {
         let db = settings.database.connect().await?;
-        let mut report: MemberReport = Member::by_email(&db, &self.email)
+        let member = members::by_email(&db, &self.email)
             .await?
-            .ok_or_else(|| anyhow!("Member {} not found", self.email))?
-            .into();
+            .ok_or_else(|| anyhow!("Member {} not found", self.email))?;
 
-        inflate_report(&mut report, &db).await?;
-        print_json(&report)
+        print_json(&member)
     }
 }
 
@@ -52,54 +50,13 @@ pub struct Uid {
     pub uid: u64,
 }
 
-async fn inflate_report(report: &mut MemberReport, db: &sqlx::Pool<sqlx::MySql>) -> Result {
-    let res = tokio::try_join!(
-        Address::mailing_address_by_uid(db, report.primary.uid),
-        Member::expiration_date_by_uid(db, report.primary.uid),
-        Member::join_date_by_uid(db, report.primary.uid)
-    );
-    match res {
-        Ok((mailing_address, expiration_date, join_date)) => {
-            report.mailing_address = mailing_address;
-            report.expiration_date = expiration_date;
-            report.join_date = join_date;
-            Ok(())
-        }
-        Err(err) => Err(err.into()),
-    }
-}
-
 impl Uid {
     pub async fn run(&self, settings: &Settings) -> Result {
         let db = settings.database.connect().await?;
-        let mut report: MemberReport = Member::by_uid(&db, self.uid)
+        let member = members::by_uid(&db, self.uid)
             .await?
-            .ok_or_else(|| anyhow!("Member {} not found", self.uid))?
-            .into();
+            .ok_or_else(|| anyhow!("Member {} not found", self.uid))?;
 
-        inflate_report(&mut report, &db).await?;
-
-        print_json(&report)
-    }
-}
-
-#[derive(Debug, serde::Serialize)]
-struct MemberReport {
-    primary: User,
-    partner: Option<User>,
-    mailing_address: Option<Address>,
-    expiration_date: Option<chrono::NaiveDate>,
-    join_date: Option<chrono::NaiveDate>,
-}
-
-impl From<Member> for MemberReport {
-    fn from(value: Member) -> Self {
-        Self {
-            primary: value.primary,
-            partner: value.partner,
-            mailing_address: None,
-            expiration_date: None,
-            join_date: None,
-        }
+        print_json(&member)
     }
 }

@@ -1,20 +1,21 @@
 use crate::Result;
-use sqlx::mysql::{MySql, MySqlExecutor};
+use sqlx::mysql::{MySql, MySqlPool};
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 pub struct User {
     pub uid: u64,
     pub email: String,
-    pub first_name: String,
-    pub last_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub birthday: Option<chrono::NaiveDate>,
 }
 
-impl User {
-    fn fetch_one_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
-        sqlx::QueryBuilder::new(
-            r#"
+fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
+    sqlx::QueryBuilder::new(
+        r#"
             SELECT DISTINCT
                 users_field_data.uid AS uid,
                 users_field_data.mail as email,
@@ -30,28 +31,27 @@ impl User {
                 users_field_data.mail IS NOT NULL
                 AND
             "#,
-        )
-    }
+    )
+}
 
-    pub async fn by_uid(exec: impl MySqlExecutor<'_>, uid: u64) -> Result<Option<Self>> {
-        let user = Self::fetch_one_query()
-            .push("users_field_data.uid = ")
-            .push_bind(uid)
-            .build_query_as::<Self>()
-            .fetch_optional(exec)
-            .await?;
+pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<User>> {
+    let user = fetch_user_query()
+        .push("users_field_data.uid = ")
+        .push_bind(uid)
+        .build_query_as::<User>()
+        .fetch_optional(exec)
+        .await?;
 
-        Ok(user)
-    }
+    Ok(user)
+}
 
-    pub async fn by_email(exec: impl MySqlExecutor<'_>, email: &str) -> Result<Option<Self>> {
-        let user = Self::fetch_one_query()
-            .push("users_field_data.mail = ")
-            .push_bind(email)
-            .build_query_as::<Self>()
-            .fetch_optional(exec)
-            .await?;
+pub async fn by_email(exec: &MySqlPool, email: &str) -> Result<Option<User>> {
+    let user = fetch_user_query()
+        .push("users_field_data.mail = ")
+        .push_bind(email)
+        .build_query_as::<User>()
+        .fetch_optional(exec)
+        .await?;
 
-        Ok(user)
-    }
+    Ok(user)
 }

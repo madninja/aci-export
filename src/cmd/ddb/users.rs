@@ -1,5 +1,5 @@
 use crate::{cmd::print_json, settings::Settings, Result};
-use ddb::User;
+use ddb::users;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
@@ -36,7 +36,7 @@ pub struct Email {
 impl Email {
     pub async fn run(&self, settings: &Settings) -> Result {
         let db = settings.database.connect().await?;
-        let user = User::by_email(&db, &self.email).await?;
+        let user = users::by_email(&db, &self.email).await?;
         print_json(&user)
     }
 }
@@ -49,7 +49,7 @@ pub struct Uid {
 impl Uid {
     pub async fn run(&self, settings: &Settings) -> Result {
         let db = settings.database.connect().await?;
-        let user = User::by_uid(&db, self.uid).await?;
+        let user = users::by_uid(&db, self.uid).await?;
         print_json(&user)
     }
 }

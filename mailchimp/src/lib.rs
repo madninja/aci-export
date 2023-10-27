@@ -168,12 +168,19 @@ impl Client {
                 .query(query)
                 .send()
                 .map_err(Error::from)
-                .and_then(|response| match response.error_for_status() {
-                    Ok(result) => {
-                        let data: Future<T> = result.json().map_err(error::Error::from).boxed();
-                        data
+                .and_then(|response| {
+                    let status = response.status();
+                    if status.is_client_error() {
+                        return response
+                            .json::<error::MailchimError>()
+                            .map_err(error::Error::from)
+                            .and_then(|e| async move { Err(Error::mailchimp(e)) })
+                            .boxed();
                     }
-                    Err(e) => future::err(Error::from(e)).boxed(),
+                    match response.error_for_status() {
+                        Ok(result) => result.json().map_err(error::Error::from).boxed(),
+                        Err(e) => future::err(error::Error::from(e)).boxed(),
+                    }
                 })
                 .boxed(),
             Err(e) => future::err(e).boxed(),
@@ -216,26 +223,41 @@ impl Client {
             .boxed()
     }
 
+    pub fn submit<T, R>(&self, method: Method, path: &str, json: &T) -> Future<R>
+    where
+        T: Serialize + ?Sized,
+        R: 'static + DeserializeOwned + std::marker::Send,
+    {
+        match self.request(method, path) {
+            Ok(builder) => builder
+                .json(json)
+                .send()
+                .map_err(error::Error::from)
+                .and_then(|response| {
+                    let status = response.status();
+                    if status.is_client_error() {
+                        return response
+                            .json::<error::MailchimError>()
+                            .map_err(error::Error::from)
+                            .and_then(|e| async move { Err(Error::mailchimp(e)) })
+                            .boxed();
+                    }
+                    match response.error_for_status() {
+                        Ok(result) => result.json().map_err(error::Error::from).boxed(),
+                        Err(e) => future::err(error::Error::from(e)).boxed(),
+                    }
+                })
+                .boxed(),
+            Err(e) => future::err(e).boxed(),
+        }
+    }
+
     pub fn post<T, R>(&self, path: &str, json: &T) -> Future<R>
     where
         T: Serialize + ?Sized,
         R: 'static + DeserializeOwned + std::marker::Send,
     {
-        match self.request(Method::POST, path) {
-            Ok(builder) => builder
-                .json(json)
-                .send()
-                .map_err(error::Error::from)
-                .and_then(|response| match response.error_for_status() {
-                    Ok(result) => {
-                        let data: Future<R> = result.json().map_err(error::Error::from).boxed();
-                        data
-                    }
-                    Err(e) => future::err(error::Error::from(e)).boxed(),
-                })
-                .boxed(),
-            Err(e) => future::err(e).boxed(),
-        }
+        self.submit(Method::POST, path, json)
     }
 
     pub fn patch<T, R>(&self, path: &str, json: &T) -> Future<R>
@@ -243,21 +265,15 @@ impl Client {
         T: Serialize + ?Sized,
         R: 'static + DeserializeOwned + std::marker::Send,
     {
-        match self.request(Method::PATCH, path) {
-            Ok(builder) => builder
-                .json(json)
-                .send()
-                .map_err(error::Error::from)
-                .and_then(|response| match response.error_for_status() {
-                    Ok(result) => {
-                        let data: Future<R> = result.json().map_err(error::Error::from).boxed();
-                        data
-                    }
-                    Err(e) => future::err(error::Error::from(e)).boxed(),
-                })
-                .boxed(),
-            Err(e) => future::err(e).boxed(),
-        }
+        self.submit(Method::PATCH, path, json)
+    }
+
+    pub fn put<T, R>(&self, path: &str, json: &T) -> Future<R>
+    where
+        T: Serialize + ?Sized,
+        R: 'static + DeserializeOwned + std::marker::Send,
+    {
+        self.submit(Method::PUT, path, json)
     }
 
     pub fn delete(&self, path: &str) -> Future<()> {

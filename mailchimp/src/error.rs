@@ -7,14 +7,25 @@ pub enum Error {
     MalformedAPIKey,
     #[error("malformed url")]
     MalformedUrl(#[from] url::ParseError),
-    #[error("request error")]
+    #[error("request error: {0}")]
     Request(#[from] reqwest::Error),
-    #[error("unexpected value")]
+    #[error("mailchimp error {}: {}", .0.status, .0.detail)]
+    Mailchimp(MailchimError),
+    #[error("unexpected value: {0}")]
     Value(serde_json::Value),
-    #[error("unexpected or invalid number {0}")]
+    #[error("unexpected or invalid number: {0}")]
     Number(String),
-    #[error("invalid merge type {0}")]
+    #[error("invalid merge type: {0}")]
     InvalidMergeType(String),
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct MailchimError {
+    pub status: u16,
+    pub r#type: String,
+    pub title: String,
+    pub detail: String,
+    pub instance: String,
 }
 
 impl Error {
@@ -24,5 +35,9 @@ impl Error {
 
     pub fn number(value: &str) -> Self {
         Self::Number(value.to_string())
+    }
+
+    pub fn mailchimp(value: MailchimError) -> Self {
+        Self::Mailchimp(value)
     }
 }

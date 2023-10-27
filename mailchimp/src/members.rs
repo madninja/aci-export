@@ -22,8 +22,30 @@ pub async fn get(client: &Client, list_id: &str, member_id: &str) -> Result<Memb
 }
 
 pub async fn for_email(client: &Client, list_id: &str, email: &str) -> Result<Member> {
+    get(client, list_id, &member_id(email)).await
+}
+
+pub fn member_id(email: &str) -> String {
+    format!("{:x}", md5::compute(email.to_lowercase()))
+}
+
+pub fn is_valid_email(email: &str) -> bool {
+    !(email.is_empty() || email.ends_with("noemail.com") || email.ends_with("example.com"))
+}
+
+pub async fn upsert(
+    client: &Client,
+    list_id: &str,
+    email: &str,
+    member: &Member,
+) -> Result<Member> {
     let member_id = format!("{:x}", md5::compute(email.to_lowercase()));
-    get(client, list_id, &member_id).await
+    client
+        .put(
+            &format!("/3.0/lists/{list_id}/members/{member_id}",),
+            member,
+        )
+        .await
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
@@ -38,7 +60,7 @@ pub enum MemberStatus {
     Noop,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 pub struct Member {
     #[serde(
         default,
@@ -59,9 +81,11 @@ pub struct Member {
     )]
     pub full_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_if_new: Option<MemberStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<MemberStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub merge_fields: Option<HashMap<String, String>>,
+    pub merge_fields: Option<HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
