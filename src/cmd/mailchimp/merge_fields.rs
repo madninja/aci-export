@@ -130,61 +130,9 @@ pub struct Update {
 
 impl Update {
     pub async fn run(&self, settings: &Settings) -> Result {
-        type TaggedMergeField = (String, MergeField);
-
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let target: MergeFields = read_toml::<MergeFieldsConfig>(&self.merge_fields)?
-            .merge_fields
-            .into_iter()
-            .collect();
-
-        let current: MergeFields =
-            mailchimp::merge_fields::all(&client, &self.list_id, Default::default())
-                .try_collect()
-                .await?;
-
-        fn collect_tags(fields: &[TaggedMergeField]) -> Vec<String> {
-            fields
-                .iter()
-                .map(|(_, field)| field.tag.clone())
-                .collect::<Vec<_>>()
-        }
-
-        let (to_delete, _): (Vec<TaggedMergeField>, Vec<TaggedMergeField>) = current
-            .clone()
-            .into_iter()
-            .partition(|(key, _)| !target.contains_key(key));
-
-        let (to_add, target_remaining): (Vec<TaggedMergeField>, Vec<TaggedMergeField>) = target
-            .into_iter()
-            .partition(|(key, _)| !current.contains_key(key));
-
-        let deleted = collect_tags(&to_delete);
-        for (_, field) in to_delete {
-            mailchimp::merge_fields::delete(&client, &self.list_id, &field.merge_id.to_string())
-                .await?;
-        }
-
-        let added = collect_tags(&to_add);
-        for (_, field) in to_add {
-            mailchimp::merge_fields::create(&client, &self.list_id, field).await?;
-        }
-
-        let mut updated = vec![];
-        for (_, mut field) in target_remaining.into_iter() {
-            let current = current.get(&field.tag).unwrap();
-            field.merge_id = current.merge_id;
-            if field != *current {
-                updated.push(field.tag.clone());
-                mailchimp::merge_fields::update(
-                    &client,
-                    &self.list_id,
-                    &current.merge_id.to_string(),
-                    field,
-                )
-                .await?;
-            }
-        }
+        let (added, deleted, updated) =
+            update_merge_fields(&client, &self.list_id, &self.merge_fields).await?;
 
         let json = json!({
             "added": added,
@@ -193,4 +141,58 @@ impl Update {
         });
         print_json(&json)
     }
+}
+
+pub async fn update_merge_fields(
+    client: &mailchimp::Client,
+    list_id: &str,
+    merge_fields: &str,
+) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
+    type TaggedMergeField = (String, MergeField);
+    let target: MergeFields = read_toml::<MergeFieldsConfig>(merge_fields)?
+        .merge_fields
+        .into_iter()
+        .collect();
+
+    let current: MergeFields = mailchimp::merge_fields::all(&client, list_id, Default::default())
+        .try_collect()
+        .await?;
+
+    fn collect_tags(fields: &[TaggedMergeField]) -> Vec<String> {
+        fields
+            .iter()
+            .map(|(_, field)| field.tag.clone())
+            .collect::<Vec<_>>()
+    }
+
+    let (to_delete, _): (Vec<TaggedMergeField>, Vec<TaggedMergeField>) = current
+        .clone()
+        .into_iter()
+        .partition(|(key, _)| !target.contains_key(key));
+
+    let (to_add, target_remaining): (Vec<TaggedMergeField>, Vec<TaggedMergeField>) = target
+        .into_iter()
+        .partition(|(key, _)| !current.contains_key(key));
+
+    let deleted = collect_tags(&to_delete);
+    for (_, field) in to_delete {
+        mailchimp::merge_fields::delete(&client, list_id, &field.merge_id.to_string()).await?;
+    }
+
+    let added = collect_tags(&to_add);
+    for (_, field) in to_add {
+        mailchimp::merge_fields::create(&client, list_id, field).await?;
+    }
+
+    let mut updated = vec![];
+    for (_, mut field) in target_remaining.into_iter() {
+        let current = current.get(&field.tag).unwrap();
+        field.merge_id = current.merge_id;
+        if field != *current {
+            updated.push(field.tag.clone());
+            mailchimp::merge_fields::update(&client, list_id, &current.merge_id.to_string(), field)
+                .await?;
+        }
+    }
+    Ok((added, deleted, updated))
 }

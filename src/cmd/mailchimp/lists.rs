@@ -73,13 +73,25 @@ impl List {
 pub struct Create {
     /// The name of a file with the list configuration
     config: String,
+
+    /// The (optional) merge field definition file to configure for the audience
+    pub merge_fields: Option<String>,
 }
 
 impl Create {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
         let list_config: mailchimp::lists::List = read_toml(&self.config)?;
+
         let list = mailchimp::lists::create(&client, &list_config).await?;
+        if let Some(merge_fields) = &self.merge_fields {
+            let _ = crate::cmd::mailchimp::merge_fields::update_merge_fields(
+                &client,
+                &list.id,
+                merge_fields,
+            )
+            .await?;
+        }
 
         print_json(&list)
     }
