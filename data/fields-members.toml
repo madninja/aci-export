@@ -29,6 +29,11 @@ name = "State"
 type = "text"
 
 [[merge_fields]]
+tag = "ZIP"
+name = "Zip Code"
+type = "text"
+
+[[merge_fields]]
 tag = "COUNTRY"
 name = "Country"
 type = "text"

@@ -259,6 +259,7 @@ fn address_to_values(
     };
 
     vec![
+        merge_fields.to_value("ZIP", address.zip_code.as_ref()),
         merge_fields.to_value("STATE", address.state.as_ref()),
         merge_fields.to_value("COUNTRY", address.country.as_ref()),
     ]
