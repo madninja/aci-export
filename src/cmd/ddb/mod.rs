@@ -1,5 +1,6 @@
 use crate::{settings::Settings, Result};
 
+pub mod clubs;
 pub mod members;
 pub mod users;
 
@@ -19,6 +20,7 @@ impl Cmd {
 pub enum DdbCommand {
     Users(users::Cmd),
     Members(members::Cmd),
+    Clubs(clubs::Cmd),
 }
 
 impl DdbCommand {
@@ -26,6 +28,7 @@ impl DdbCommand {
         match self {
             Self::Users(cmd) => cmd.run(settings).await,
             Self::Members(cmd) => cmd.run(settings).await,
+            Self::Clubs(cmd) => cmd.run(settings).await,
         }
     }
 }

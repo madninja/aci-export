@@ -1,6 +1,7 @@
 mod error;
 pub use error::{Error, Result};
 
+pub mod clubs;
 pub mod members;
 pub mod users;
 
