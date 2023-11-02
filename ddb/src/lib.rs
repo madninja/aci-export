@@ -3,6 +3,7 @@ pub use error::{Error, Result};
 
 pub mod clubs;
 pub mod members;
+pub mod regions;
 pub mod users;
 
 /// A type alias for `Future` that may return `crate::error::Error`
