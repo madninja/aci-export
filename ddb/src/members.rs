@@ -1,4 +1,4 @@
-use crate::{users::User, Error, Result, Stream};
+use crate::{clubs::Club, users::User, Error, Result, Stream};
 use futures::{StreamExt, TryStreamExt};
 use sqlx::{MySql, MySqlPool};
 
@@ -46,7 +46,12 @@ const FETCH_MEMBERS_QUERY: &str = r#"
         CAST(partner__field_birth_date.field_birth_date_value AS DATE) AS partner_birthday,
 
         MembershipExpireYear AS expiration_date,
-        MembershipJoinYear AS join_date
+        MembershipJoinYear AS join_date,
+
+        club_data.name AS club_name,
+        club_data.uid AS club_uid,
+        club_data.number AS club_number,
+        club_data.region AS club_region
 
     FROM
         users_field_data 
@@ -59,6 +64,21 @@ const FETCH_MEMBERS_QUERY: &str = r#"
         LEFT JOIN user__field_first_name partner__field_first_name ON partner_field_data.uid = partner__field_first_name.entity_id
         LEFT JOIN user__field_last_name partner__field_last_name ON partner_field_data.uid = partner__field_last_name.entity_id
         LEFT JOIN user__field_birth_date partner__field_birth_date ON partner_field_data.uid = partner__field_birth_date.entity_id
+        LEFT JOIN (
+            SELECT
+                home_club_membership.user_id AS user_id,
+                fd.title AS name,
+                fd.nid AS uid,
+                nc.field_club_number_value as number,
+                rn.field_region_number_value as region
+            FROM
+                ssp_membership_home_club home_club_membership
+                INNER JOIN paragraph__field_club ed ON home_club_membership.paragraph_id = ed.entity_id
+                INNER JOIN node_field_data fd ON ed.field_club_target_id = fd.nid
+                LEFT JOIN node__field_club_number nc ON fd.nid = nc.entity_id
+                LEFT JOIN node__field_region nr ON nr.entity_id = nc.entity_id
+                LEFT JOIN node__field_region_number rn ON rn.entity_id = nr.field_region_target_id
+        ) club_data ON users_field_data.uid = club_data.user_id        
         INNER JOIN user__field_personal_status ON users_field_data.uid = user__field_personal_status.entity_id 
             AND user__field_personal_status.field_personal_status_target_id = 947 
         INNER JOIN user__roles ON users_field_data.uid = user__roles.entity_id
@@ -135,6 +155,8 @@ pub struct Member {
     pub expiration_date: Option<chrono::NaiveDate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub join_date: Option<chrono::NaiveDate>,
+    #[sqlx(flatten, try_from = "LocalClub")]
+    pub local_club: Club,
 }
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
@@ -172,6 +194,25 @@ impl From<PartnerUser> for Option<User> {
             })
         } else {
             None
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+struct LocalClub {
+    club_name: Option<String>,
+    club_uid: Option<u64>,
+    club_number: Option<i64>,
+    club_region: Option<i64>,
+}
+
+impl From<LocalClub> for Club {
+    fn from(value: LocalClub) -> Club {
+        Club {
+            uid: value.club_uid.unwrap_or_default(),
+            number: value.club_number,
+            name: value.club_name.unwrap_or_default(),
+            region: value.club_region.unwrap_or_default(),
         }
     }
 }

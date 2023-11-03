@@ -14,6 +14,21 @@ name = "Last Name"
 type = "text"
 
 [[merge_fields]]
+tag = "CLUB"
+name = "Local Club"
+type = "text"
+
+[[merge_fields]]
+tag = "CLUB_NR"
+name = "Local Club Number"
+type = "number"
+
+[[merge_fields]]
+tag = "REGION"
+name = "Region"
+type = "number"
+
+[[merge_fields]]
 tag = "PRIMARY"
 name = "Primary"
 type = "text"

@@ -240,6 +240,7 @@ async fn to_member(
     .into_iter()
     .filter_map(|value| value.map_err(Error::from).transpose())
     .chain(address_to_values(address, merge_fields).into_iter())
+    .chain(club_to_values(&member.local_club, merge_fields).into_iter())
     .collect::<Result<Vec<mailchimp::merge_fields::MergeFieldValue>>>()?;
     Ok(mailchimp::members::Member {
         id: mailchimp::members::member_id(&user.email),
@@ -262,6 +263,20 @@ fn address_to_values(
         merge_fields.to_value("ZIP", address.zip_code.as_ref()),
         merge_fields.to_value("STATE", address.state.as_ref()),
         merge_fields.to_value("COUNTRY", address.country.as_ref()),
+    ]
+    .into_iter()
+    .filter_map(|value| value.map_err(Error::from).transpose())
+    .collect()
+}
+
+fn club_to_values(
+    club: &ddb::clubs::Club,
+    merge_fields: &mailchimp::merge_fields::MergeFields,
+) -> Vec<Result<mailchimp::merge_fields::MergeFieldValue>> {
+    vec![
+        merge_fields.to_value("CLUB", club.name.as_str()),
+        merge_fields.to_value("CLUB_NR", club.number),
+        merge_fields.to_value("REGION", club.region as u64),
     ]
     .into_iter()
     .filter_map(|value| value.map_err(Error::from).transpose())

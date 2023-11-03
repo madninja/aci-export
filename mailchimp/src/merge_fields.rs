@@ -222,6 +222,26 @@ impl ToMergeFieldValue for u64 {
                 field.tag.clone(),
                 serde_json::to_value(self).unwrap(),
             ))),
+            MergeType::Text => Ok(Some((
+                field.tag.clone(),
+                serde_json::to_value(self.to_string()).unwrap(),
+            ))),
+            _ => Err(Error::InvalidMergeType(field.r#type.to_string())),
+        }
+    }
+}
+
+impl ToMergeFieldValue for i64 {
+    fn to_merge_field_value(self, field: &MergeField) -> Result<Option<MergeFieldValue>> {
+        match field.r#type {
+            MergeType::Number => Ok(Some((
+                field.tag.clone(),
+                serde_json::to_value(self).unwrap(),
+            ))),
+            MergeType::Text => Ok(Some((
+                field.tag.clone(),
+                serde_json::to_value(self.to_string()).unwrap(),
+            ))),
             _ => Err(Error::InvalidMergeType(field.r#type.to_string())),
         }
     }
