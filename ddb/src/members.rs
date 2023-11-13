@@ -9,6 +9,16 @@ pub fn all(exec: &MySqlPool) -> Stream<Member> {
         .boxed()
 }
 
+pub async fn by_club<'a, 'e: 'a>(exec: &'e MySqlPool, uid: u64) -> Result<Vec<Member>> {
+    let members = fetch_members_query()
+        .push("AND club_data.uid = ")
+        .push_bind(uid)
+        .build_query_as::<Member>()
+        .fetch_all(exec)
+        .await?;
+    Ok(members)
+}
+
 pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Member>> {
     let member = fetch_members_query()
         .push("AND users_field_data.uid = ")

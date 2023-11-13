@@ -1,9 +1,6 @@
 use crate::{
-    cmd::{
-        mailchimp::{read_toml, MergeFieldsConfig},
-        print_json,
-    },
-    settings::Settings,
+    cmd::print_json,
+    settings::{MailchimpSetting, Settings},
     Error, Result,
 };
 use futures::{TryFutureExt, TryStreamExt};
@@ -18,8 +15,8 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        self.cmd.run(settings).await
+    pub async fn run(&self, settings: &Settings, profile: &MailchimpSetting) -> Result {
+        self.cmd.run(settings, profile).await
     }
 }
 
@@ -34,14 +31,14 @@ pub enum ListsCommand {
 }
 
 impl ListsCommand {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings, profile: &MailchimpSetting) -> Result {
         match self {
-            Self::List(cmd) => cmd.run(settings).await,
-            Self::Create(cmd) => cmd.run(settings).await,
-            Self::Delete(cmd) => cmd.run(settings).await,
-            Self::Info(cmd) => cmd.run(settings).await,
-            Self::Update(cmd) => cmd.run(settings).await,
-            Self::Sync(cmd) => cmd.run(settings).await,
+            Self::List(cmd) => cmd.run(settings, profile).await,
+            Self::Create(cmd) => cmd.run(settings, profile).await,
+            Self::Delete(cmd) => cmd.run(settings, profile).await,
+            Self::Info(cmd) => cmd.run(settings, profile).await,
+            Self::Update(cmd) => cmd.run(settings, profile).await,
+            Self::Sync(cmd) => cmd.run(settings, profile).await,
         }
     }
 }
@@ -49,49 +46,41 @@ impl ListsCommand {
 /// List all or a specific audience list.
 #[derive(Debug, clap::Args)]
 pub struct List {
-    /// The list ID to get information for
-    list_id: Option<String>,
+    /// Override the list ID to get information for
+    #[arg(long)]
+    list: Option<String>,
+    #[arg(long, conflicts_with = "list")]
+    all: bool,
 }
 
 impl List {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        if let Some(list_id) = &self.list_id {
-            let list = mailchimp::lists::get(&client, list_id).await?;
-            print_json(&list)
-        } else {
+    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
+        let client = profile.client()?;
+        if self.all {
             let lists = mailchimp::lists::all(&client, Default::default())
                 .try_collect::<Vec<_>>()
                 .await?;
-            print_json(&lists)
+            return print_json(&lists);
         }
+        let list = mailchimp::lists::get(&client, profile.list_override(&self.list)?).await?;
+        print_json(&list)
     }
 }
 
 /// Create a new audience list.
 #[derive(Debug, clap::Args)]
-pub struct Create {
-    /// The name of a file with the list configuration
-    config: String,
-
-    /// The (optional) merge field definition file to configure for the audience
-    pub merge_fields: Option<String>,
-}
+pub struct Create {}
 
 impl Create {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let list_config: mailchimp::lists::List = read_toml(&self.config)?;
-
-        let list = mailchimp::lists::create(&client, &list_config).await?;
-        if let Some(merge_fields) = &self.merge_fields {
-            let _ = crate::cmd::mailchimp::merge_fields::update_merge_fields(
-                &client,
-                &list.id,
-                merge_fields,
-            )
-            .await?;
-        }
+    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
+        let client = profile.client()?;
+        let list = mailchimp::lists::create(&client, &profile.config()?).await?;
+        let _ = crate::cmd::mailchimp::merge_fields::update_merge_fields(
+            &client,
+            &list.id,
+            profile.fields()?,
+        )
+        .await?;
 
         print_json(&list)
     }
@@ -105,8 +94,8 @@ pub struct Delete {
 }
 
 impl Delete {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
+    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
+        let client = profile.client()?;
         mailchimp::lists::delete(&client, &self.list_id).await?;
         Ok(())
     }
@@ -115,30 +104,27 @@ impl Delete {
 /// Get information about an audience list.
 #[derive(Debug, clap::Args)]
 pub struct Info {
-    /// The list ID of the list to get
-    list_id: String,
+    /// Overridelist ID of the list to get
+    list: Option<String>,
 }
 
 impl Info {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let list = mailchimp::lists::get(&client, &self.list_id).await?;
+    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
+        let client = profile.client()?;
+        let list = mailchimp::lists::get(&client, profile.list_override(&self.list)?).await?;
         print_json(&list)
     }
 }
 
 /// Udpate an audience to match a configuration file.
 #[derive(Debug, clap::Args)]
-pub struct Update {
-    /// The name of a file with the list configuration
-    config: String,
-}
+pub struct Update {}
 
 impl Update {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        let client = mailchimp::client::from_api_key(&settings.mailchimp.api_key)?;
-        let list_config: mailchimp::lists::List = read_toml(&self.config)?;
-        let list = mailchimp::lists::update(&client, &list_config.id, &list_config).await?;
+    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
+        let list_config = profile.config()?;
+        let list =
+            mailchimp::lists::update(&profile.client()?, &list_config.id, &list_config).await?;
 
         print_json(&list)
     }
@@ -147,33 +133,27 @@ impl Update {
 /// Sync the members or an audience from a database.
 #[derive(Debug, clap::Args)]
 pub struct Sync {
-    /// The name of a file with the list configuration
-    config: String,
-
-    /// The merge field definition file
-    fields: String,
-
     /// The email address of a single member to sync
-    #[clap(long)]
+    #[arg(long)]
     member: Option<String>,
 }
 
 impl Sync {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings, profile: &MailchimpSetting) -> Result {
         use futures::stream::StreamExt;
-        let client = Arc::new(mailchimp::client::from_api_key(
-            &settings.mailchimp.api_key,
-        )?);
+        let client = Arc::new(profile.client()?);
         let db = settings.database.connect().await?;
-        let list_config: &mailchimp::lists::List = &read_toml(&self.config)?;
-        let merge_fields: &mailchimp::merge_fields::MergeFields =
-            &read_toml::<MergeFieldsConfig>(&self.fields)?.into();
+        let list_config = &profile.config()?;
+        let merge_fields = &profile.fields()?;
 
         let stream: ddb::Stream<ddb::members::Member> = if let Some(email) = &self.member {
             let db_member = ddb::members::by_email(&db, email)
                 .await?
                 .ok_or(anyhow::anyhow!("Member not found: {email}"))?;
             futures::stream::once(async { Ok(db_member) }).boxed()
+        } else if let Some(club) = profile.club {
+            let members = ddb::members::by_club(&db, club).await?;
+            futures::stream::iter(members).map(Ok).boxed()
         } else {
             ddb::members::all(&db)
         };

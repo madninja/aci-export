@@ -1,4 +1,7 @@
-use crate::{settings::Settings, Result};
+use crate::{
+    settings::{MailchimpSetting, Settings},
+    Result,
+};
 
 pub mod lists;
 pub mod members;
@@ -9,11 +12,15 @@ pub mod ping;
 pub struct Cmd {
     #[command(subcommand)]
     cmd: MailchimpCommand,
+
+    /// Mailchimp profile to use
+    profile: String,
 }
 
 impl Cmd {
     pub async fn run(&self, settings: &Settings) -> Result {
-        self.cmd.run(settings).await
+        let profile = settings.profile(&self.profile)?;
+        self.cmd.run(settings, profile).await
     }
 }
 
@@ -26,31 +33,12 @@ pub enum MailchimpCommand {
 }
 
 impl MailchimpCommand {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings, profile: &MailchimpSetting) -> Result {
         match self {
-            Self::Lists(cmd) => cmd.run(settings).await,
-            Self::Members(cmd) => cmd.run(settings).await,
-            Self::MergeFields(cmd) => cmd.run(settings).await,
-            Self::Ping(cmd) => cmd.run(settings).await,
+            Self::Lists(cmd) => cmd.run(settings, profile).await,
+            Self::Members(cmd) => cmd.run(settings, profile).await,
+            Self::MergeFields(cmd) => cmd.run(settings, profile).await,
+            Self::Ping(cmd) => cmd.run(settings, profile).await,
         }
-    }
-}
-
-pub fn read_toml<'de, T: serde::Deserialize<'de>>(path: &str) -> Result<T> {
-    let config = config::Config::builder()
-        .add_source(config::File::with_name(path))
-        .build()
-        .and_then(|config| config.try_deserialize())?;
-    Ok(config)
-}
-
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub(crate) struct MergeFieldsConfig {
-    merge_fields: Vec<mailchimp::merge_fields::MergeField>,
-}
-
-impl From<MergeFieldsConfig> for mailchimp::merge_fields::MergeFields {
-    fn from(config: MergeFieldsConfig) -> Self {
-        config.merge_fields.into_iter().collect()
     }
 }

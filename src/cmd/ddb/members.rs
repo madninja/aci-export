@@ -18,6 +18,7 @@ impl Cmd {
 pub enum MemberCmd {
     Email(Email),
     Uid(Uid),
+    Club(Club),
 }
 
 impl MemberCmd {
@@ -25,6 +26,7 @@ impl MemberCmd {
         match self {
             Self::Email(cmd) => cmd.run(settings).await,
             Self::Uid(cmd) => cmd.run(settings).await,
+            Self::Club(cmd) => cmd.run(settings).await,
         }
     }
 }
@@ -58,5 +60,19 @@ impl Uid {
             .ok_or_else(|| anyhow!("Member {} not found", self.uid))?;
 
         print_json(&member)
+    }
+}
+
+#[derive(Debug, clap::Args)]
+pub struct Club {
+    pub uid: u64,
+}
+
+impl Club {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let db = settings.database.connect().await?;
+        let members = members::by_club(&db, self.uid).await?;
+
+        print_json(&members)
     }
 }
