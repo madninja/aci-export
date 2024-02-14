@@ -21,6 +21,12 @@ pub async fn get(client: &Client, list_id: &str, member_id: &str) -> Result<Memb
         .await
 }
 
+pub async fn delete(client: &Client, list_id: &str, member_id: &str) -> Result<()> {
+    client
+        .delete(&format!("/3.0/lists/{list_id}/members/{member_id}"))
+        .await
+}
+
 pub async fn for_email(client: &Client, list_id: &str, email: &str) -> Result<Member> {
     get(client, list_id, &member_id(email)).await
 }
@@ -36,10 +42,9 @@ pub fn is_valid_email(email: &str) -> bool {
 pub async fn upsert(
     client: &Client,
     list_id: &str,
-    email: &str,
+    member_id: &str,
     member: &Member,
 ) -> Result<Member> {
-    let member_id = format!("{:x}", md5::compute(email.to_lowercase()));
     client
         .put(
             &format!("/3.0/lists/{list_id}/members/{member_id}",),

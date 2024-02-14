@@ -1,17 +1,22 @@
 use crate::{clubs::Club, users::User, Error, Result, Stream};
+use constcat::concat;
 use futures::{StreamExt, TryStreamExt};
 use sqlx::{MySql, MySqlPool};
 
 pub fn all(exec: &MySqlPool) -> Stream<Member> {
-    sqlx::query_as::<_, Member>(FETCH_MEMBERS_QUERY)
+    const QUERY: &str = concat!(
+        FETCH_MEMBERS_QUERY,
+        " AND paragraphs_item_field_data.parent_field_name = 'field_home_club'"
+    );
+    sqlx::query_as::<_, Member>(QUERY)
         .fetch(exec)
         .map_err(Error::from)
         .boxed()
 }
 
-pub async fn by_club<'a, 'e: 'a>(exec: &'e MySqlPool, uid: u64) -> Result<Vec<Member>> {
+pub async fn by_club(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
     let members = fetch_members_query()
-        .push("AND club_data.uid = ")
+        .push("AND node_field_data_paragraph__field_club.nid = ")
         .push_bind(uid)
         .build_query_as::<Member>()
         .fetch_all(exec)
@@ -21,6 +26,7 @@ pub async fn by_club<'a, 'e: 'a>(exec: &'e MySqlPool, uid: u64) -> Result<Vec<Me
 
 pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Member>> {
     let member = fetch_members_query()
+        .push("AND paragraphs_item_field_data.parent_field_name = 'field_home_club'")
         .push("AND users_field_data.uid = ")
         .push_bind(uid)
         .build_query_as::<Member>()
@@ -42,77 +48,78 @@ pub async fn by_email(exec: &MySqlPool, email: &str) -> Result<Option<Member>> {
 }
 
 const FETCH_MEMBERS_QUERY: &str = r#"
-    SELECT DISTINCT
-        users_field_data.uid AS uid,
-        users_field_data.mail as email,
-        user__field_first_name.field_first_name_value AS first_name,
-        user__field_last_name.field_last_name_value AS last_name,
-        CAST(user__field_birth_date.field_birth_date_value AS DATE) AS birthday,
+    SELECT
+    	users_field_data.uid AS uid,
+    	alldata.email AS email,
+    	alldata.first_name AS first_name,
+    	alldata.last_name AS last_name,
+        CAST(alldata.birthdate AS DATE) AS birthday,
 
-        partner_field_data.uid AS partner_uid,
-        partner_field_data.mail AS partner_email,
-        partner__field_first_name.field_first_name_value AS partner_first_name,
-        partner__field_last_name.field_last_name_value AS partner_last_name,
-        CAST(partner__field_birth_date.field_birth_date_value AS DATE) AS partner_birthday,
+       	CAST(alldata.partner_user_id AS UNSIGNED) AS partner_uid,
+    	alldata.partner_email AS partner_email,
+    	alldata.partner_first_name AS partner_first_name,
+    	alldata.partner_last_name AS partner_last_name,
+        CAST(alldata.partner_birthdate AS DATE) AS partner_birthday,
 
-        MembershipExpireYear AS expiration_date,
-        MembershipJoinYear AS join_date,
+    	IF(memclassterm.name IS NULL, "Regular", memclassterm.name) AS member_class,
+    	paragraphs_item_field_data.parent_field_name AS member_type,
 
-        club_data.name AS club_name,
-        club_data.uid AS club_uid,
-        club_data.number AS club_number,
-        club_data.region AS club_region
+        CAST(node__field_club_number.entity_id AS SIGNED) AS club_number, 
+    	node_field_data_paragraph__field_club.nid AS club_uid,
+    	node_field_data_paragraph__field_club.title AS club_name,
+        node_field__data_paragraph_field_club__field_region_number.field_region_number_value as club_region,
+
+        CAST(alldata.membership_expire AS DATE) as expiration_date,
+        CAST(alldata.membership_join_year AS DATE) as join_date
 
     FROM
-        users_field_data 
-        LEFT JOIN user__field_primary_member ON users_field_data.uid = user__field_primary_member.field_primary_member_target_id
-        LEFT JOIN user__field_first_name ON users_field_data.uid = user__field_first_name.entity_id
-        LEFT JOIN user__field_last_name ON users_field_data.uid = user__field_last_name.entity_id
-        LEFT JOIN user__field_birth_date ON users_field_data.uid = user__field_birth_date.entity_id
-        
-        LEFT JOIN users_field_data partner_field_data ON user__field_primary_member.entity_id = partner_field_data.uid
-        LEFT JOIN user__field_first_name partner__field_first_name ON partner_field_data.uid = partner__field_first_name.entity_id
-        LEFT JOIN user__field_last_name partner__field_last_name ON partner_field_data.uid = partner__field_last_name.entity_id
-        LEFT JOIN user__field_birth_date partner__field_birth_date ON partner_field_data.uid = partner__field_birth_date.entity_id
-        LEFT JOIN (
-            SELECT
-                home_club_membership.user_id AS user_id,
-                fd.title AS name,
-                fd.nid AS uid,
-                nc.field_club_number_value as number,
-                rn.field_region_number_value as region
-            FROM
-                ssp_membership_home_club home_club_membership
-                INNER JOIN paragraph__field_club ed ON home_club_membership.paragraph_id = ed.entity_id
-                INNER JOIN node_field_data fd ON ed.field_club_target_id = fd.nid
-                LEFT JOIN node__field_club_number nc ON fd.nid = nc.entity_id
-                LEFT JOIN node__field_region nr ON nr.entity_id = nc.entity_id
-                LEFT JOIN node__field_region_number rn ON rn.entity_id = nr.field_region_target_id
-        ) club_data ON users_field_data.uid = club_data.user_id        
-        INNER JOIN user__field_personal_status ON users_field_data.uid = user__field_personal_status.entity_id 
-            AND user__field_personal_status.field_personal_status_target_id = 947 
-        INNER JOIN user__roles ON users_field_data.uid = user__roles.entity_id
-        INNER JOIN (
-            SELECT
-                n.entity_id AS entity_id,
-                MAX(CAST(ld.field_leave_date_value AS DATE)) AS MembershipExpireYear,
-                MIN(CAST(jd.field_join_date_value AS DATE)) AS MembershipJoinYear
-            FROM
-                user__field_international_membership n
-                INNER JOIN paragraphs_item_field_data fd ON fd.revision_id = n.field_international_membership_target_revision_id
-                INNER JOIN paragraph__field_join_date jd ON fd.id = jd.entity_id
-                INNER JOIN paragraph__field_leave_date ld ON fd.id = ld.entity_id
-                INNER JOIN paragraph__field_type ft ON fd.id = ft.entity_id
-            GROUP BY
-                n.entity_id
-            ORDER BY
-                MembershipExpireYear DESC
-        ) int_membership ON users_field_data.uid = int_membership.entity_id
-    
-    WHERE
-        users_field_data.mail IS NOT NULL
-        AND user__field_primary_member.field_primary_member_target_id IS NOT NULL
-    "#;
+    	paragraphs_item_field_data
+    	LEFT JOIN paragraph__field_club ON paragraphs_item_field_data.id = paragraph__field_club.entity_id
+    		AND paragraph__field_club.deleted = '0'
+    		AND(paragraph__field_club.langcode = paragraphs_item_field_data.langcode
+    			OR paragraph__field_club.bundle = 'membership')
+    		INNER JOIN node_field_data node_field_data_paragraph__field_club ON paragraph__field_club.field_club_target_id = node_field_data_paragraph__field_club.nid
+    		LEFT JOIN node__field_region node_field_data_paragraph__field_club__node__field_region ON node_field_data_paragraph__field_club.nid = node_field_data_paragraph__field_club__node__field_region.entity_id
+    			AND node_field_data_paragraph__field_club__node__field_region.deleted = '0'
+    	LEFT JOIN node__field_club_number ON 
+            node__field_club_number.entity_id = node_field_data_paragraph__field_club.nid
+    	LEFT JOIN node_field_data node_field_data_node__field_region ON 
+            node_field_data_paragraph__field_club__node__field_region.field_region_target_id = node_field_data_node__field_region.nid
+		LEFT JOIN node__field_region_number node_field__data_paragraph_field_club__field_region_number ON
+			node_field_data_paragraph__field_club__node__field_region.field_region_target_id = node_field__data_paragraph_field_club__field_region_number.entity_id
+    	LEFT JOIN paragraph__field_leave_date paragraph__field_leave_date ON paragraphs_item_field_data.id = paragraph__field_leave_date.entity_id
+    		AND paragraph__field_leave_date.deleted = '0'
+    		AND(paragraph__field_leave_date.langcode = paragraphs_item_field_data.langcode
+    			OR paragraph__field_leave_date.bundle = 'membership')
+    	LEFT JOIN paragraph__field_join_date paragraph__field_join_date ON paragraphs_item_field_data.id = paragraph__field_join_date.entity_id
+    		AND paragraph__field_join_date.deleted = '0'
+    		AND(paragraph__field_join_date.langcode = paragraphs_item_field_data.langcode
+    			OR paragraph__field_join_date.bundle = 'membership')
+    		INNER JOIN users_field_data users_field_data ON paragraphs_item_field_data.parent_id = users_field_data.uid
+    		LEFT JOIN user__field_primary_member user_is_primary_member ON users_field_data.uid = user_is_primary_member.entity_id
+    		INNER JOIN z_member_search_main alldata ON users_field_data.uid = alldata.user_id
+    		INNER JOIN ssp_membership_international_membership rightmembership ON users_field_data.uid = rightmembership.user_id
+    		LEFT JOIN paragraph__field_membership_class memclass ON rightmembership.paragraph_id = memclass.entity_id
+    		LEFT JOIN taxonomy_term_field_data memclassterm ON memclass.field_membership_class_target_id = memclassterm.tid
+    		LEFT JOIN v_brns brns ON users_field_data.uid = brns.user_id
+    		LEFT JOIN user__field_home_club userhomeclub ON paragraphs_item_field_data.id = userhomeclub.field_home_club_target_id
+    			AND userhomeclub.deleted = '0'
+    	LEFT JOIN user__field_memberships useraffclub ON paragraphs_item_field_data.id = useraffclub.field_memberships_target_id
+    		AND useraffclub.deleted = '0'
+    	LEFT JOIN user__field_intraclub_memberships userintraclub ON paragraphs_item_field_data.id = userintraclub.field_intraclub_memberships_target_id
+    		AND userintraclub.deleted = '0'
+    WHERE (((paragraphs_item_field_data.status = '1')
+    		AND(paragraphs_item_field_data.type IN('membership'))
+    		AND(paragraph__field_leave_date.field_leave_date_value IS NOT NULL)
+    		AND(paragraph__field_join_date.field_join_date_value IS NOT NULL))
+    	AND((alldata.personal_status_id IN('947'))
+    	AND((CAST(paragraph__field_leave_date.field_leave_date_value AS DATE) >= NOW()))
+    AND((CAST(paragraph__field_join_date.field_join_date_value AS DATE) <= NOW()))
+    AND(((useraffclub.entity_id IS NOT NULL
+    	OR userhomeclub.entity_id IS NOT NULL
+    	OR userintraclub.entity_id IS NOT NULL)))))
+    AND(user_is_primary_member.field_primary_member_target_id IS NULL)
+"#;
 
 fn fetch_members_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
     sqlx::QueryBuilder::new(FETCH_MEMBERS_QUERY)
@@ -154,8 +161,56 @@ pub async fn mailing_address_by_uid(exec: &MySqlPool, uid: u64) -> Result<Option
     Ok(member)
 }
 
+#[derive(Debug, serde::Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MemberClass {
+    #[default]
+    Regular,
+    Lifetime,
+}
+
+impl TryFrom<String> for MemberClass {
+    type Error = sqlx::Error;
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "regular" => Ok(Self::Regular),
+            "lifetime" => Ok(Self::Lifetime),
+            other => Err(sqlx::Error::decode(format!(
+                "unexpected member class {}",
+                other
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MemberType {
+    #[default]
+    Regular,
+    Affiliate,
+}
+
+impl TryFrom<String> for MemberType {
+    type Error = sqlx::Error;
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "field_home_club" => Ok(Self::Regular),
+            "field_memberships" => Ok(Self::Affiliate),
+            other => Err(sqlx::Error::decode(format!(
+                "unexpected member type{}",
+                other
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 pub struct Member {
+    #[sqlx(default, try_from = "String")]
+    pub member_class: MemberClass,
+    #[sqlx(try_from = "String")]
+    pub member_type: MemberType,
     #[sqlx(flatten)]
     pub primary: User,
     #[sqlx(flatten, try_from = "PartnerUser")]
