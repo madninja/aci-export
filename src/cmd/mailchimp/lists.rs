@@ -191,7 +191,7 @@ impl Sync {
         let to_delete = &audience - &*upserted.read().await;
 
         // don't process deletes for a single member sync
-        if self.member.is_some() {
+        if self.member.is_none() {
             // Delete all to_delete entries
             futures::stream::iter(to_delete.iter())
                 .map(|member_id| Ok::<_, crate::Error>((client.clone(), member_id)))
@@ -263,6 +263,11 @@ async fn to_member(
         merge_fields.to_value("BDAY", user.birthday),
         merge_fields.to_value("JOIN", member.join_date),
         merge_fields.to_value("EXPIRE", member.expiration_date),
+        merge_fields.to_value("MEMBER_TYPE", &serde_json::to_string(&member.member_type)?),
+        merge_fields.to_value(
+            "MEMBER_CLASS",
+            &serde_json::to_string(&member.member_class)?,
+        ),
     ]
     .into_iter()
     .filter_map(|value| value.map_err(Error::from).transpose())

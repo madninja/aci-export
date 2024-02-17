@@ -34,6 +34,16 @@ name = "Primary"
 type = "text"
 
 [[merge_fields]]
+tag = "MEMBER_TYPE"
+name = "Member Type"
+type = "text"
+
+[[merge_fields]]
+tag = "MEMBER_CLASS"
+name = "Member Class"
+type = "text"
+
+[[merge_fields]]
 tag = "BDAY"
 name = "Birthday"
 type = "birthday"
