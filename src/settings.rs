@@ -58,7 +58,11 @@ impl MailchimpSetting {
     }
 
     pub fn config(&self) -> Result<mailchimp::lists::List> {
-        read_toml(&self.config)
+        let mut list: mailchimp::lists::List = read_toml(&self.config)?;
+        if let Some(list_id) = &self.list {
+            list.id = list_id.clone();
+        }
+        Ok(list)
     }
 
     pub fn fields(&self) -> Result<mailchimp::merge_fields::MergeFields> {
