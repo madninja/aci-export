@@ -209,7 +209,7 @@ impl TryFrom<String> for MemberType {
 pub struct Member {
     #[sqlx(default, try_from = "String")]
     pub member_class: MemberClass,
-    #[sqlx(try_from = "String")]
+    #[sqlx(default, try_from = "String")]
     pub member_type: MemberType,
     #[sqlx(flatten)]
     pub primary: User,

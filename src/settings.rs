@@ -1,5 +1,5 @@
-use crate::Result;
-use anyhow::{anyhow, Context};
+use crate::{Error, Result};
+use anyhow::{anyhow, bail, Context};
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use sqlx::MySqlPool;
@@ -74,6 +74,13 @@ impl MailchimpSetting {
             .or(self.list.as_deref())
             .ok_or_else(|| anyhow!("no list id found"))
     }
+
+    pub fn fields_override<'a>(&'a self, fields: &'a Option<String>) -> Result<&'a str> {
+        fields
+            .as_deref()
+            .or(Some(&self.fields))
+            .ok_or_else(|| anyhow!("no list id found"))
+    }
 }
 
 pub fn read_toml<'de, T: serde::Deserialize<'de>>(path: &str) -> Result<T> {
@@ -89,11 +96,17 @@ pub fn read_merge_fields(path: &str) -> Result<mailchimp::merge_fields::MergeFie
     struct MergeFieldsConfig {
         merge_fields: Vec<mailchimp::merge_fields::MergeField>,
     }
-    impl From<MergeFieldsConfig> for mailchimp::merge_fields::MergeFields {
-        fn from(config: MergeFieldsConfig) -> Self {
-            config.merge_fields.into_iter().collect()
+    impl TryFrom<MergeFieldsConfig> for mailchimp::merge_fields::MergeFields {
+        type Error = Error;
+        fn try_from(config: MergeFieldsConfig) -> Result<Self> {
+            for field in config.merge_fields.iter() {
+                if field.tag.len() > 10 {
+                    bail!("Merge field tag too long: {}", field.tag);
+                }
+            }
+            Ok(config.merge_fields.into_iter().collect())
         }
     }
 
-    read_toml::<MergeFieldsConfig>(path).map(Into::into)
+    read_toml::<MergeFieldsConfig>(path).and_then(TryInto::try_into)
 }

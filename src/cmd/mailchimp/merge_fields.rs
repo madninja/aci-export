@@ -74,11 +74,9 @@ pub struct Create {
     list: Option<String>,
     /// The type of the merge field.
     pub merge_type: mailchimp::merge_fields::MergeType,
-
     /// The tag for the merge field. Usually a short string that is used as a
     /// mail merge field.
     pub tag: String,
-
     /// The descriptive name of the merge field
     pub name: String,
 }
@@ -128,12 +126,12 @@ pub struct Update {
     #[arg(long)]
     list: Option<String>,
     /// The merge field definition file to configure for the audience
-    pub merge_fields: String,
+    pub merge_fields: Option<String>,
 }
 
 impl Update {
     pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
-        let merge_fields = read_merge_fields(&self.merge_fields)?;
+        let merge_fields = read_merge_fields(profile.fields_override(&self.merge_fields)?)?;
         let (added, deleted, updated) = update_merge_fields(
             &profile.client()?,
             profile.list_override(&self.list)?,
