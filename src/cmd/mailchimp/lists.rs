@@ -183,7 +183,13 @@ impl Sync {
             mailchimp::members::all(&client, &list_config.id, Default::default());
         let audience: HashSet<String> = mailchimp_stream
             .map_err(Error::from)
-            .map_ok(|member| member.id.clone())
+            .try_filter_map(|member| async move {
+                if member.status != Some(mailchimp::members::MemberStatus::Cleaned) {
+                    Ok(None)
+                } else {
+                    Ok(Some(member.id))
+                }
+            })
             .try_collect::<Vec<_>>()
             .await?
             .into_iter()

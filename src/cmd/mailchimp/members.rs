@@ -40,14 +40,20 @@ pub struct List {
     list: Option<String>,
     /// Specific member email to get.
     #[arg(long)]
-    member: Option<String>,
+    email: Option<String>,
+    /// Specific member id to get
+    #[arg(long)]
+    id: Option<String>,
 }
 
 impl List {
     pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
         let list_id = profile.list_override(&self.list)?;
         let client = profile.client()?;
-        if let Some(email) = &self.member {
+        if let Some(member_id) = &self.id {
+            let member = mailchimp::members::for_id(&client, list_id, member_id).await?;
+            print_json(&member)
+        } else if let Some(email) = &self.email {
             let member = mailchimp::members::for_email(&client, list_id, email).await?;
             print_json(&member)
         } else {

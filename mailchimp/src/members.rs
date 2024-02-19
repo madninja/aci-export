@@ -28,7 +28,11 @@ pub async fn delete(client: &Client, list_id: &str, member_id: &str) -> Result<(
 }
 
 pub async fn for_email(client: &Client, list_id: &str, email: &str) -> Result<Member> {
-    get(client, list_id, &member_id(email)).await
+    for_id(client, list_id, &member_id(email)).await
+}
+
+pub async fn for_id(client: &Client, list_id: &str, member_id: &str) -> Result<Member> {
+    get(client, list_id, member_id).await
 }
 
 pub fn member_id(email: &str) -> String {
@@ -61,6 +65,7 @@ pub enum MemberStatus {
     Cleaned,
     Pending,
     Transactional,
+    Archived,
     #[default]
     Noop,
 }
