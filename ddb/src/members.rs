@@ -64,7 +64,7 @@ const FETCH_MEMBERS_QUERY: &str = r#"
     	IF(memclassterm.name IS NULL, "Regular", memclassterm.name) AS member_class,
     	paragraphs_item_field_data.parent_field_name AS member_type,
 
-        CAST(node__field_club_number.entity_id AS SIGNED) AS club_number, 
+        CAST(node__field_club_number.field_club_number_value AS SIGNED) AS club_number, 
     	node_field_data_paragraph__field_club.nid AS club_uid,
     	node_field_data_paragraph__field_club.title AS club_name,
         node_field__data_paragraph_field_club__field_region_number.field_region_number_value as club_region,
