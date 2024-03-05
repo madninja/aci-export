@@ -82,6 +82,7 @@ impl Create {
             &client,
             &list.id,
             profile.fields()?,
+            true,
         )
         .await?;
 

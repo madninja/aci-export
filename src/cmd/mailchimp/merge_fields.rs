@@ -127,6 +127,9 @@ pub struct Update {
     list: Option<String>,
     /// The merge field definition file to configure for the audience
     pub merge_fields: Option<String>,
+    /// Delete merge fields that are not present in the target list
+    #[arg(long, default_value_t)]
+    delete: bool,
 }
 
 impl Update {
@@ -136,6 +139,7 @@ impl Update {
             &profile.client()?,
             profile.list_override(&self.list)?,
             merge_fields,
+            self.delete,
         )
         .await?;
 
@@ -152,6 +156,7 @@ pub async fn update_merge_fields(
     client: &mailchimp::Client,
     list_id: &str,
     target: MergeFields,
+    process_deletes: bool,
 ) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
     type TaggedMergeField = (String, MergeField);
 
@@ -176,8 +181,10 @@ pub async fn update_merge_fields(
         .partition(|(key, _)| !current.contains_key(key));
 
     let deleted = collect_tags(&to_delete);
-    for (_, field) in to_delete {
-        mailchimp::merge_fields::delete(client, list_id, &field.merge_id.to_string()).await?;
+    if process_deletes {
+        for (_, field) in to_delete {
+            mailchimp::merge_fields::delete(client, list_id, &field.merge_id.to_string()).await?;
+        }
     }
 
     let added = collect_tags(&to_add);
