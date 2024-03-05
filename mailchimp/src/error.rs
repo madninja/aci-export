@@ -22,7 +22,7 @@ pub enum Error {
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct MailchimError {
     pub status: u16,
-    pub r#type: String,
+    pub r#type: Option<String>,
     pub title: String,
     pub detail: String,
     pub instance: String,
