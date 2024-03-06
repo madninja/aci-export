@@ -25,7 +25,7 @@ pub enum MergeFieldsCommand {
     List(List),
     Create(Create),
     Delete(Delete),
-    Update(Update),
+    Sync(Sync),
 }
 
 impl MergeFieldsCommand {
@@ -34,7 +34,7 @@ impl MergeFieldsCommand {
             Self::List(cmd) => cmd.run(settings, profile).await,
             Self::Create(cmd) => cmd.run(settings, profile).await,
             Self::Delete(cmd) => cmd.run(settings, profile).await,
-            Self::Update(cmd) => cmd.run(settings, profile).await,
+            Self::Sync(cmd) => cmd.run(settings, profile).await,
         }
     }
 }
@@ -121,7 +121,7 @@ impl Delete {
 }
 
 #[derive(Debug, clap::Args)]
-pub struct Update {
+pub struct Sync {
     /// Override the audience list ID.
     #[arg(long)]
     list: Option<String>,
@@ -132,7 +132,7 @@ pub struct Update {
     delete: bool,
 }
 
-impl Update {
+impl Sync {
     pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
         let merge_fields = read_merge_fields(profile.fields_override(&self.merge_fields)?)?;
         let (added, deleted, updated) = update_merge_fields(
