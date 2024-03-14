@@ -3,29 +3,24 @@ use anyhow::{anyhow, bail, Context};
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use sqlx::MySqlPool;
-use std::{collections::HashMap, path::Path};
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
-    pub mailchimp: HashMap<String, MailchimpSetting>,
+    pub mailchimp: MailchimpSetting,
 }
 
 impl Settings {
     /// Settings are loaded from the file in the given path.
-    pub fn new(path: &Path) -> Result<Self> {
+    pub fn new(path: &Path, env_prefix: &str) -> Result<Self> {
         Ok(Config::builder()
             // Source settings file
             .add_source(File::with_name(path.to_str().expect("file name")).required(false))
             .add_source(Environment::with_prefix("ACI").separator("__"))
+            .add_source(Environment::with_prefix(env_prefix).separator("__"))
             .build()
             .and_then(|config| config.try_deserialize())?)
-    }
-
-    pub fn profile(&self, profile: &str) -> Result<&MailchimpSetting> {
-        self.mailchimp
-            .get(profile)
-            .ok_or_else(|| anyhow::anyhow!("no mailchimp profile named {profile}"))
     }
 }
 
@@ -46,7 +41,6 @@ impl DatabaseSettings {
 #[derive(Debug, Deserialize, Clone)]
 pub struct MailchimpSetting {
     pub api_key: String,
-    pub config: String,
     pub fields: String,
     pub club: Option<u64>,
     pub list: Option<String>,
@@ -55,14 +49,6 @@ pub struct MailchimpSetting {
 impl MailchimpSetting {
     pub fn client(&self) -> Result<mailchimp::Client> {
         Ok(mailchimp::client::from_api_key(&self.api_key)?)
-    }
-
-    pub fn config(&self) -> Result<mailchimp::lists::List> {
-        let mut list: mailchimp::lists::List = read_toml(&self.config)?;
-        if let Some(list_id) = &self.list {
-            list.id = list_id.clone();
-        }
-        Ok(list)
     }
 
     pub fn fields(&self) -> Result<mailchimp::merge_fields::MergeFields> {

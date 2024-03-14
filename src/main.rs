@@ -16,6 +16,9 @@ pub struct Cli {
     /// Configuration file to use
     #[arg(short = 'c', default_value = "settings.toml")]
     config: PathBuf,
+
+    #[arg(short = 'e', default_value = "ACI")]
+    env_prefix: String,
 }
 
 #[derive(Debug, clap::Subcommand)]
@@ -36,7 +39,7 @@ async fn main() -> Result {
 }
 
 async fn run(cli: Cli) -> Result {
-    let settings = Settings::new(&cli.config)?;
+    let settings = Settings::new(&cli.config, &cli.env_prefix)?;
     match cli.cmd {
         Cmd::Ddb(cmd) => cmd.run(&settings).await,
         Cmd::Mailchimp(cmd) => cmd.run(&settings).await,

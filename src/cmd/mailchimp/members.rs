@@ -1,10 +1,5 @@
-use crate::{
-    cmd::print_json,
-    settings::{MailchimpSetting, Settings},
-    Result,
-};
+use crate::{cmd::print_json, settings::Settings, Result};
 use futures::TryStreamExt;
-use mailchimp::{self};
 
 /// Commands on the members of an audience list.
 #[derive(Debug, clap::Args)]
@@ -14,8 +9,8 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: &Settings, profile: &MailchimpSetting) -> Result {
-        self.cmd.run(settings, profile).await
+    pub async fn run(&self, settings: &Settings) -> Result {
+        self.cmd.run(settings).await
     }
 }
 
@@ -25,14 +20,14 @@ pub enum MembersCommand {
 }
 
 impl MembersCommand {
-    pub async fn run(&self, settings: &Settings, profile: &MailchimpSetting) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result {
         match self {
-            Self::List(cmd) => cmd.run(settings, profile).await,
+            Self::List(cmd) => cmd.run(settings).await,
         }
     }
 }
 
-/// Get all or just one member of the configured or a given audience list.
+/// Get all or just one member of a given audience list.
 #[derive(Debug, clap::Args)]
 pub struct List {
     /// List ID to get members for.
@@ -47,17 +42,17 @@ pub struct List {
 }
 
 impl List {
-    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
-        let list_id = profile.list_override(&self.list)?;
-        let client = profile.client()?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let client = settings.mailchimp.client()?;
+        let list = settings.mailchimp.list_override(&self.list)?;
         if let Some(member_id) = &self.id {
-            let member = mailchimp::members::for_id(&client, list_id, member_id).await?;
+            let member = mailchimp::members::for_id(&client, list, member_id).await?;
             print_json(&member)
         } else if let Some(email) = &self.email {
-            let member = mailchimp::members::for_email(&client, list_id, email).await?;
+            let member = mailchimp::members::for_email(&client, list, email).await?;
             print_json(&member)
         } else {
-            let lists = mailchimp::members::all(&client, list_id, Default::default())
+            let lists = mailchimp::members::all(&client, list, Default::default())
                 .try_collect::<Vec<_>>()
                 .await?;
             print_json(&lists)

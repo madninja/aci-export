@@ -1,23 +1,7 @@
-name = "Test - All Members"
-permission_reminder = "You are receiving this email because you are a member of Airstream Club International."
+[database]
+# url = "mysql://..."
 
-## All fields required
-[campaign_defaults]
-from_email = "comments@airstreamclub.org"
-from_name = "Airstream Club International"
-language = "en"
-subject = "Airstream Club International Outreach"
-
-[contact]
-# required
-address1 = "803 E Pike St"
-# address2 = 
-# required
-city = "Jackson Center"
-# required
-company = "Airstream Club International"
-# required 
-country = "USA"
-phone = "937-596-5211"
-state = "OH"
-zip = "45334-6001"
+[mailchimp]
+#api_jey = "..."
+list = "2debb345e7"
+fields = "data/fields-all.toml"

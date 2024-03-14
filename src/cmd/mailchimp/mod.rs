@@ -1,7 +1,4 @@
-use crate::{
-    settings::{MailchimpSetting, Settings},
-    Result,
-};
+use crate::{settings::Settings, Result};
 
 pub mod lists;
 pub mod members;
@@ -12,15 +9,11 @@ pub mod ping;
 pub struct Cmd {
     #[command(subcommand)]
     cmd: MailchimpCommand,
-
-    /// Mailchimp profile to use
-    profile: String,
 }
 
 impl Cmd {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let profile = settings.profile(&self.profile)?;
-        self.cmd.run(settings, profile).await
+        self.cmd.run(settings).await
     }
 }
 
@@ -33,12 +26,12 @@ pub enum MailchimpCommand {
 }
 
 impl MailchimpCommand {
-    pub async fn run(&self, settings: &Settings, profile: &MailchimpSetting) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result {
         match self {
-            Self::Lists(cmd) => cmd.run(settings, profile).await,
-            Self::Members(cmd) => cmd.run(settings, profile).await,
-            Self::MergeFields(cmd) => cmd.run(settings, profile).await,
-            Self::Ping(cmd) => cmd.run(settings, profile).await,
+            Self::Lists(cmd) => cmd.run(settings).await,
+            Self::Members(cmd) => cmd.run(settings).await,
+            Self::MergeFields(cmd) => cmd.run(settings).await,
+            Self::Ping(cmd) => cmd.run(settings).await,
         }
     }
 }

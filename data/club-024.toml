@@ -1,23 +1,9 @@
-name = "Colarado Airstream Club - All Members ACI Import"
-permission_reminder = "You are receiving this email because you are a member of Airstream Club International."
+[database]
+#url = ".."
 
-## All fields required
-[campaign_defaults]
-from_email = "comments@airstreamclub.org"
-from_name = "Airstream Club International"
-language = "en"
-subject = "Airstream Club International Outreach"
+[mailchimp]
+# api_key = "..."
+list = "0c33244dd9"
+club = 1799
+fields = "data/fields-club.toml"
 
-[contact]
-# required
-address1 = "803 E Pike St"
-# address2 = 
-# required
-city = "Jackson Center"
-# required
-company = "Airstream Club International"
-# required 
-country = "USA"
-phone = "937-596-5211"
-state = "OH"
-zip = "45334-6001"

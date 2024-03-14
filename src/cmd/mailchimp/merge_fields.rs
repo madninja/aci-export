@@ -1,6 +1,6 @@
 use crate::{
     cmd::print_json,
-    settings::{read_merge_fields, MailchimpSetting, Settings},
+    settings::{read_merge_fields, Settings},
     Result,
 };
 use futures::TryStreamExt;
@@ -15,8 +15,8 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: &Settings, profile: &MailchimpSetting) -> Result {
-        self.cmd.run(settings, profile).await
+    pub async fn run(&self, settings: &Settings) -> Result {
+        self.cmd.run(settings).await
     }
 }
 
@@ -29,12 +29,12 @@ pub enum MergeFieldsCommand {
 }
 
 impl MergeFieldsCommand {
-    pub async fn run(&self, settings: &Settings, profile: &MailchimpSetting) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result {
         match self {
-            Self::List(cmd) => cmd.run(settings, profile).await,
-            Self::Create(cmd) => cmd.run(settings, profile).await,
-            Self::Delete(cmd) => cmd.run(settings, profile).await,
-            Self::Sync(cmd) => cmd.run(settings, profile).await,
+            Self::List(cmd) => cmd.run(settings).await,
+            Self::Create(cmd) => cmd.run(settings).await,
+            Self::Delete(cmd) => cmd.run(settings).await,
+            Self::Sync(cmd) => cmd.run(settings).await,
         }
     }
 }
@@ -51,9 +51,9 @@ pub struct List {
 }
 
 impl List {
-    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
-        let client = profile.client()?;
-        let list = profile.list_override(&self.list)?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let client = settings.mailchimp.client()?;
+        let list = settings.mailchimp.list_override(&self.list)?;
         if let Some(merge_id) = self.id {
             let merge_field = mailchimp::merge_fields::get(&client, list, merge_id).await?;
             print_json(&merge_field)
@@ -82,11 +82,11 @@ pub struct Create {
 }
 
 impl Create {
-    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
-        let client = profile.client()?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let client = settings.mailchimp.client()?;
         let merge_field = mailchimp::merge_fields::create(
             &client,
-            profile.list_override(&self.list)?,
+            settings.mailchimp.list_override(&self.list)?,
             MergeField {
                 tag: self.tag.clone(),
                 name: self.name.clone(),
@@ -109,10 +109,10 @@ pub struct Delete {
 }
 
 impl Delete {
-    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result {
         mailchimp::merge_fields::delete(
-            &profile.client()?,
-            profile.list_override(&self.list)?,
+            &settings.mailchimp.client()?,
+            settings.mailchimp.list_override(&self.list)?,
             &self.merge_id,
         )
         .await?;
@@ -133,11 +133,12 @@ pub struct Sync {
 }
 
 impl Sync {
-    pub async fn run(&self, _settings: &Settings, profile: &MailchimpSetting) -> Result {
-        let merge_fields = read_merge_fields(profile.fields_override(&self.merge_fields)?)?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let merge_fields =
+            read_merge_fields(settings.mailchimp.fields_override(&self.merge_fields)?)?;
         let (added, deleted, updated) = update_merge_fields(
-            &profile.client()?,
-            profile.list_override(&self.list)?,
+            &settings.mailchimp.client()?,
+            settings.mailchimp.list_override(&self.list)?,
             merge_fields,
             self.delete,
         )
