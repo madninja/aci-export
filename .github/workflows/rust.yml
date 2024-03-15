@@ -64,7 +64,7 @@ jobs:
           sha256sum -b --tag $NAME.tar.gz > $NAME.checksum
 
       - name: Build | Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: aci-export
           if-no-files-found: error
@@ -81,7 +81,7 @@ jobs:
           access_token: ${{ github.token }}
 
       - name: Setup | Artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: aci-export.*
 
