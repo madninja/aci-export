@@ -83,7 +83,7 @@ jobs:
       - name: Setup | Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: aci-export.*
+          name: aci-export
 
       - name: Release | Artifacts
         uses: softprops/action-gh-release@v1
