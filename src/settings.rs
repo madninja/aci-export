@@ -43,6 +43,7 @@ pub struct MailchimpSetting {
     pub api_key: String,
     pub fields: String,
     pub club: Option<u64>,
+    pub region: Option<u64>,
     pub list: Option<String>,
 }
 
@@ -59,6 +60,14 @@ impl MailchimpSetting {
         list.as_deref()
             .or(self.list.as_deref())
             .ok_or_else(|| anyhow!("no list id found"))
+    }
+
+    pub fn club_override(&self, uid: Option<u64>) -> Option<u64> {
+        uid.or(self.club)
+    }
+
+    pub fn region_override(&self, uid: Option<u64>) -> Option<u64> {
+        uid.or(self.region)
     }
 
     pub fn fields_override<'a>(&'a self, fields: &'a Option<String>) -> Result<&'a str> {

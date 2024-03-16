@@ -1,0 +1,9 @@
+[database]
+#url = ".."
+
+[mailchimp]
+# api_key = "..."
+list = "826548788a"
+region = 1693
+fields = "data/fields-all.toml"
+

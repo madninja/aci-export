@@ -151,7 +151,7 @@ impl Update {
     }
 }
 
-/// Sync the members or an audience from a database.
+/// Sync a single emember, club members, or a members in a region to an audience
 #[derive(Debug, clap::Args)]
 pub struct Sync {
     /// List ID to sync settings with
@@ -164,6 +164,9 @@ pub struct Sync {
     /// The ID of a club to sync
     #[arg(long)]
     club: Option<u64>,
+    /// The ID of a region to sync
+    #[arg(long)]
+    region: Option<u64>,
 }
 
 impl Sync {
@@ -179,8 +182,11 @@ impl Sync {
                 .await?
                 .ok_or(anyhow::anyhow!("Member not found: {email}"))?;
             futures::stream::once(async { Ok(db_member) }).boxed()
-        } else if let Some(club) = self.club {
+        } else if let Some(club) = settings.mailchimp.club_override(self.club) {
             let members = ddb::members::by_club(&db, club).await?;
+            futures::stream::iter(members).map(Ok).boxed()
+        } else if let Some(region) = settings.mailchimp.region_override(self.region) {
+            let members = ddb::members::by_region(&db, region).await?;
             futures::stream::iter(members).map(Ok).boxed()
         } else {
             ddb::members::all(&db)
@@ -229,6 +235,7 @@ impl Sync {
             .await?
             .into_iter()
             .collect();
+        println!("Audience {}", audience.len());
         let to_delete = &audience - &*upserted.read().await;
 
         // don't process deletes for a single member sync

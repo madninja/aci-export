@@ -24,6 +24,16 @@ pub async fn by_club(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
     Ok(members)
 }
 
+pub async fn by_region(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
+    let members = fetch_members_query()
+        .push("AND node_field_data_node__field_region.nid = ")
+        .push_bind(uid)
+        .build_query_as::<Member>()
+        .fetch_all(exec)
+        .await?;
+    Ok(members)
+}
+
 pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Member>> {
     let member = fetch_members_query()
         .push("AND paragraphs_item_field_data.parent_field_name = 'field_home_club'")
@@ -68,6 +78,7 @@ const FETCH_MEMBERS_QUERY: &str = r#"
     	node_field_data_paragraph__field_club.nid AS club_uid,
     	node_field_data_paragraph__field_club.title AS club_name,
         node_field__data_paragraph_field_club__field_region_number.field_region_number_value as club_region,
+        node_field_data_node__field_region.nid AS club_region_uid,
 
         CAST(alldata.membership_expire AS DATE) as expiration_date,
         CAST(alldata.membership_join_year AS DATE) as join_date
@@ -269,6 +280,7 @@ struct LocalClub {
     club_uid: Option<u64>,
     club_number: Option<i64>,
     club_region: Option<i64>,
+    club_region_uid: Option<u64>,
 }
 
 impl From<LocalClub> for Club {
