@@ -2,6 +2,7 @@ use crate::{clubs::Club, users::User, Error, Result, Stream};
 use constcat::concat;
 use futures::{StreamExt, TryStreamExt};
 use sqlx::{MySql, MySqlPool};
+use std::fmt;
 
 pub fn all(exec: &MySqlPool) -> Stream<Member> {
     const QUERY: &str = concat!(
@@ -180,6 +181,15 @@ pub enum MemberClass {
     Lifetime,
 }
 
+impl fmt::Display for MemberClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Regular => f.write_str("regular"),
+            Self::Lifetime => f.write_str("lifetime"),
+        }
+    }
+}
+
 impl TryFrom<String> for MemberClass {
     type Error = sqlx::Error;
     fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
@@ -202,12 +212,21 @@ pub enum MemberType {
     Affiliate,
 }
 
+impl fmt::Display for MemberType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Regular => f.write_str("regular"),
+            Self::Affiliate => f.write_str("affiliate"),
+        }
+    }
+}
+
 impl TryFrom<String> for MemberType {
     type Error = sqlx::Error;
     fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
         match value.to_lowercase().as_str() {
-            "field_home_club" => Ok(Self::Regular),
-            "field_memberships" => Ok(Self::Affiliate),
+            "field_home_club" | "regular" => Ok(Self::Regular),
+            "field_memberships" | "affiliate" => Ok(Self::Affiliate),
             other => Err(sqlx::Error::decode(format!(
                 "unexpected member type{}",
                 other

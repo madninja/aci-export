@@ -235,7 +235,6 @@ impl Sync {
             .await?
             .into_iter()
             .collect();
-        println!("Audience {}", audience.len());
         let to_delete = &audience - &*upserted.read().await;
 
         // don't process deletes for a single member sync
@@ -311,11 +310,8 @@ async fn to_member(
         merge_fields.to_value("BDAY", user.birthday),
         merge_fields.to_value("JOIN", member.join_date),
         merge_fields.to_value("EXPIRE", member.expiration_date),
-        merge_fields.to_value("MEMBER_TYPE", &serde_json::to_string(&member.member_type)?),
-        merge_fields.to_value(
-            "MEMBER_CLASS",
-            &serde_json::to_string(&member.member_class)?,
-        ),
+        merge_fields.to_value("MTYPE", &member.member_type.to_string()),
+        merge_fields.to_value("MCLASS", &member.member_class.to_string()),
     ]
     .into_iter()
     .filter_map(|value| value.map_err(Error::from).transpose())
