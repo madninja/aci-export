@@ -86,11 +86,8 @@ jobs:
           name: aci-export
 
       - name: Release | Artifacts
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           fail_on_unmatched_files: true
-          name: ${{github.ref_name}}
           files: |
             **/aci-export.*
