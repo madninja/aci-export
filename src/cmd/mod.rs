@@ -1,5 +1,6 @@
 use crate::Result;
 use futures::stream::{BoxStream, TryStreamExt};
+use std::fmt;
 
 pub mod ddb;
 pub mod mailchimp;
@@ -60,11 +61,11 @@ impl std::str::FromStr for Format {
     }
 }
 
-impl ToString for Format {
-    fn to_string(&self) -> String {
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Csv => "csv".to_string(),
-            Self::Json => "json".to_string(),
+            Self::Csv => f.write_str("csv"),
+            Self::Json => f.write_str("json"),
         }
     }
 }

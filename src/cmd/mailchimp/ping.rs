@@ -1,5 +1,4 @@
 use crate::{cmd::print_json, settings::Settings, Result};
-use mailchimp::{self};
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
