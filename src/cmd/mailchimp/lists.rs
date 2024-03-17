@@ -3,7 +3,7 @@ use crate::{
     settings::{read_merge_fields, read_toml, Settings},
     Error, Result,
 };
-use ddb::members::{MemberClass, MemberType};
+use ddb::members::{MemberClass, MemberStatus, MemberType};
 use futures::{stream::StreamExt, TryFutureExt, TryStreamExt};
 use mailchimp::members::{member_id, MemberTagStatus, MemberTagUpdate};
 use serde_json::json;
@@ -331,6 +331,9 @@ fn to_member_tag_updates(member: &ddb::members::Member) -> Vec<MemberTagUpdate> 
         }),
         to_update("lifetime", member, |m| {
             m.member_class == MemberClass::Lifetime
+        }),
+        to_update("lapsed", member, |m| {
+            m.member_status == MemberStatus::Lapsed
         }),
     ]
 }

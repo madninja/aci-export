@@ -92,6 +92,7 @@ const FETCH_MEMBERS_QUERY: &str = r#"
 
     	IF(memclassterm.name IS NULL, "Regular", memclassterm.name) AS member_class,
     	paragraphs_item_field_data.parent_field_name AS member_type,
+        alldata.personal_status_id as member_status, 
 
         CAST(node__field_club_number.field_club_number_value AS SIGNED) AS club_number, 
     	node_field_data_paragraph__field_club.nid AS club_uid,
@@ -142,8 +143,8 @@ const FETCH_MEMBERS_QUERY: &str = r#"
     		AND(paragraphs_item_field_data.type IN('membership'))
     		AND(paragraph__field_leave_date.field_leave_date_value IS NOT NULL)
     		AND(paragraph__field_join_date.field_join_date_value IS NOT NULL))
-    	AND((alldata.personal_status_id IN('947'))
-    	AND((CAST(paragraph__field_leave_date.field_leave_date_value AS DATE) >= NOW()))
+    	AND((alldata.personal_status_id IN('947', '951'))
+    	AND((CAST(paragraph__field_leave_date.field_leave_date_value AS DATE) >= DATE_SUB(NOW(), INTERVAL 1 YEAR)))
     AND((CAST(paragraph__field_join_date.field_join_date_value AS DATE) <= NOW()))
     AND(((useraffclub.entity_id IS NOT NULL
     	OR userhomeclub.entity_id IS NOT NULL
@@ -215,8 +216,50 @@ impl TryFrom<String> for MemberClass {
             "regular" => Ok(Self::Regular),
             "lifetime" => Ok(Self::Lifetime),
             other => Err(sqlx::Error::decode(format!(
-                "unexpected member class {}",
-                other
+                "unexpected member class {other}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MemberStatus {
+    #[default]
+    Current,
+    Lapsed,
+}
+
+impl fmt::Display for MemberStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Current => f.write_str("current"),
+            Self::Lapsed => f.write_str("lapsed"),
+        }
+    }
+}
+
+impl TryFrom<String> for MemberStatus {
+    type Error = sqlx::Error;
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "current" => Ok(Self::Current),
+            "lapsed" => Ok(Self::Lapsed),
+            other => Err(sqlx::Error::decode(format!(
+                "unexpected member status {other}"
+            ))),
+        }
+    }
+}
+
+impl TryFrom<i32> for MemberStatus {
+    type Error = sqlx::Error;
+    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
+        match value {
+            947 => Ok(Self::Current),
+            951 => Ok(Self::Lapsed),
+            other => Err(sqlx::Error::decode(format!(
+                "unexpected member status {other}"
             ))),
         }
     }
@@ -246,7 +289,7 @@ impl TryFrom<String> for MemberType {
             "field_home_club" | "regular" => Ok(Self::Regular),
             "field_memberships" | "affiliate" => Ok(Self::Affiliate),
             other => Err(sqlx::Error::decode(format!(
-                "unexpected member type{}",
+                "unexpected member type {}",
                 other
             ))),
         }
@@ -259,6 +302,8 @@ pub struct Member {
     pub member_class: MemberClass,
     #[sqlx(default, try_from = "String")]
     pub member_type: MemberType,
+    #[sqlx(default, try_from = "i32")]
+    pub member_status: MemberStatus,
     #[sqlx(flatten)]
     pub primary: User,
     #[sqlx(flatten, try_from = "PartnerUser")]
