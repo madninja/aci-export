@@ -57,6 +57,38 @@ pub async fn upsert(
         .await
 }
 
+pub mod tags {
+    use super::*;
+
+    pub async fn for_id(client: &Client, list_id: &str, member_id: &str) -> Result<Vec<MemberTag>> {
+        client
+            .fetch(
+                &format!("/3.0/lists/{list_id}/members/{member_id}/tags"),
+                NO_QUERY,
+            )
+            .await
+    }
+
+    pub async fn update(
+        client: &Client,
+        list_id: &str,
+        member_id: &str,
+        updates: &[MemberTagUpdate],
+    ) -> Result {
+        #[derive(Serialize, Debug)]
+        struct RequestBody<'a> {
+            tags: &'a [MemberTagUpdate],
+        }
+        let body = RequestBody { tags: updates };
+        client
+            .post(
+                &format!("/3.0/lists/{list_id}/members/{member_id}/tags"),
+                &body,
+            )
+            .await
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MemberStatus {
@@ -96,6 +128,25 @@ pub struct Member {
     pub status: Option<MemberStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_fields: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct MemberTag {
+    name: String,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct MemberTagUpdate {
+    pub name: String,
+    pub status: MemberTagStatus,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MemberTagStatus {
+    #[default]
+    Active,
+    Inactive,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

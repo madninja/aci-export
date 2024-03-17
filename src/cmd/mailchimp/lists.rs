@@ -3,8 +3,9 @@ use crate::{
     settings::{read_merge_fields, read_toml, Settings},
     Error, Result,
 };
+use ddb::members::{MemberClass, MemberType};
 use futures::{stream::StreamExt, TryFutureExt, TryStreamExt};
-use mailchimp::{self, members::member_id};
+use mailchimp::members::{member_id, MemberTagStatus, MemberTagUpdate};
 use serde_json::json;
 use sqlx::MySqlPool;
 use std::{collections::HashSet, sync::Arc};
@@ -225,7 +226,7 @@ impl Sync {
         let audience: HashSet<String> = mailchimp_stream
             .map_err(Error::from)
             .try_filter_map(|member| async move {
-                if member.status != Some(mailchimp::members::MemberStatus::Cleaned) {
+                if member.status == Some(mailchimp::members::MemberStatus::Cleaned) {
                     Ok(None)
                 } else {
                     Ok(Some(member.id))
@@ -235,10 +236,10 @@ impl Sync {
             .await?
             .into_iter()
             .collect();
-        let to_delete = &audience - &*upserted.read().await;
 
         // don't process deletes for a single member sync
-        if self.member.is_none() {
+        let deleted = if self.member.is_none() {
+            let to_delete = &audience - &*upserted.read().await;
             // Delete all to_delete entries
             futures::stream::iter(to_delete.iter())
                 .map(|member_id| Ok::<_, crate::Error>((client.clone(), member_id)))
@@ -247,11 +248,14 @@ impl Sync {
                     Ok(())
                 })
                 .await?;
-        }
+            to_delete.len()
+        } else {
+            0
+        };
 
         let json = json!({
                 "upserted": upserted.read().await.len(),
-                "deleted": to_delete.len(),
+                "deleted": deleted,
         });
         print_json(&json)
     }
@@ -266,6 +270,8 @@ async fn upsert_member(
 ) -> Result<Vec<String>> {
     let address = ddb::members::mailing_address_by_uid(&db, member.primary.uid).await?;
     let primary = to_member(&member, &address, &member.primary, merge_fields).await?;
+    let tag_updates = to_member_tag_updates(&member);
+
     let mut processed = Vec::with_capacity(2);
 
     if let Some(parnter_user) = &member.partner {
@@ -274,13 +280,16 @@ async fn upsert_member(
             merge_fields.insert("PRIMARY".into(), member.primary.email.clone().into());
         }
         if mailchimp::members::is_valid_email(&partner.email_address) {
-            let partner_id = member_id(&partner.email_address);
+            let member_id = member_id(&partner.email_address);
             // println!("Partner {}", partner.email_address);
-            mailchimp::members::upsert(client, list_id, &partner_id, &partner)
+            mailchimp::members::upsert(client, list_id, &member_id, &partner)
                 .map_ok(|_| ())
+                .and_then(|_| {
+                    mailchimp::members::tags::update(client, list_id, &member_id, &tag_updates)
+                })
                 .or_else(|err| handle_mailchimp_error("partner", parnter_user, err))
                 .await?;
-            processed.push(partner_id);
+            processed.push(member_id);
         }
     }
 
@@ -289,12 +298,41 @@ async fn upsert_member(
         // println!("Primary {}", primary.email_address);
         mailchimp::members::upsert(client, list_id, &member_id, &primary)
             .map_ok(|_| ())
+            .and_then(|_| {
+                mailchimp::members::tags::update(client, list_id, &member_id, &tag_updates)
+            })
             .or_else(|err| handle_mailchimp_error("primary", &member.primary, err))
             .await?;
         processed.push(member_id);
     }
 
     Ok(processed)
+}
+
+fn to_member_tag_updates(member: &ddb::members::Member) -> Vec<MemberTagUpdate> {
+    fn to_update<F: Fn(&ddb::members::Member) -> bool>(
+        name: &str,
+        member: &ddb::members::Member,
+        f: F,
+    ) -> MemberTagUpdate {
+        let status = if f(member) {
+            MemberTagStatus::Active
+        } else {
+            MemberTagStatus::Inactive
+        };
+        MemberTagUpdate {
+            name: name.to_string(),
+            status,
+        }
+    }
+    vec![
+        to_update("affiliate", member, |m| {
+            m.member_type == MemberType::Affiliate
+        }),
+        to_update("lifetime", member, |m| {
+            m.member_class == MemberClass::Lifetime
+        }),
+    ]
 }
 
 async fn to_member(
@@ -310,8 +348,6 @@ async fn to_member(
         merge_fields.to_value("BDAY", user.birthday),
         merge_fields.to_value("JOIN", member.join_date),
         merge_fields.to_value("EXPIRE", member.expiration_date),
-        merge_fields.to_value("MTYPE", &member.member_type.to_string()),
-        merge_fields.to_value("MCLASS", &member.member_class.to_string()),
     ]
     .into_iter()
     .filter_map(|value| value.map_err(Error::from).transpose())

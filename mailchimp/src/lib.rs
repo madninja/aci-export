@@ -6,13 +6,7 @@ use reqwest::{
     Method, RequestBuilder, Url,
 };
 use serde::{de::DeserializeOwned, Serialize};
-use std::{
-    fmt::Debug,
-    marker::{Send, Sync},
-    pin::Pin,
-    str::FromStr,
-    time::Duration,
-};
+use std::{fmt::Debug, pin::Pin, str::FromStr, time::Duration};
 
 /// A type alias for `Future` that may return `crate::error::Error`
 pub type Future<T> = Pin<Box<dyn StdFuture<Output = Result<T>> + Send>>;
@@ -243,7 +237,18 @@ impl Client {
                             .boxed();
                     }
                     match response.error_for_status() {
-                        Ok(result) => result.json().map_err(error::Error::from).boxed(),
+                        Ok(result) => result
+                            .bytes()
+                            .map_err(error::Error::from)
+                            .and_then(|bytes| async move {
+                                if bytes.is_empty() {
+                                    serde_json::from_str("null").map_err(error::Error::from)
+                                } else {
+                                    serde_json::from_slice(&bytes).map_err(error::Error::from)
+                                }
+                            })
+                            .boxed(),
+                        // Ok(result) => result.json().map_err(error::Error::from).boxed(),
                         Err(e) => future::err(error::Error::from(e)).boxed(),
                     }
                 })
@@ -382,7 +387,7 @@ macro_rules! query_default_impl {
 pub(crate) use {paged_query_impl, paged_response_impl, query_default_impl};
 
 pub mod deserialize_null_string {
-    use serde::{self, Deserialize, Deserializer};
+    use serde::{Deserialize, Deserializer};
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<String, D::Error>
     where
@@ -403,7 +408,7 @@ where
 
 pub mod deserialize_null_i32 {
     use super::I32Visitor;
-    use serde::{self, Deserializer};
+    use serde::Deserializer;
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<i32, D::Error>
     where

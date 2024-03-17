@@ -2,7 +2,7 @@ use crate::{clubs::Club, users::User, Error, Result, Stream};
 use constcat::concat;
 use futures::{StreamExt, TryStreamExt};
 use sqlx::{MySql, MySqlPool};
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 pub fn all(exec: &MySqlPool) -> Stream<Member> {
     const QUERY: &str = concat!(
@@ -26,13 +26,31 @@ pub async fn by_club(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
 }
 
 pub async fn by_region(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
-    let members = fetch_members_query()
+    let all = fetch_members_query()
         .push("AND node_field_data_node__field_region.nid = ")
         .push_bind(uid)
         .build_query_as::<Member>()
         .fetch_all(exec)
         .await?;
-    Ok(members)
+
+    Ok(dedupe_members(all))
+}
+
+/// Remove affiliates in the given members list that are also regualr members
+pub fn dedupe_members(members: Vec<Member>) -> Vec<Member> {
+    let (regulars, mut affiliates): (Vec<Member>, Vec<Member>) = members
+        .into_iter()
+        .partition(|member| member.member_type != MemberType::Affiliate);
+    let mut member_map: HashMap<String, Member> = regulars
+        .into_iter()
+        .map(|member| (member.primary.email.clone(), member))
+        .collect();
+
+    affiliates.retain(|affiliate| !member_map.contains_key(&affiliate.primary.email));
+    affiliates.into_iter().for_each(|affiliate| {
+        member_map.insert(affiliate.primary.email.clone(), affiliate);
+    });
+    member_map.into_values().collect()
 }
 
 pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Member>> {
@@ -173,7 +191,7 @@ pub async fn mailing_address_by_uid(exec: &MySqlPool, uid: u64) -> Result<Option
     Ok(member)
 }
 
-#[derive(Debug, serde::Serialize, Default)]
+#[derive(Debug, serde::Serialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum MemberClass {
     #[default]
@@ -204,7 +222,7 @@ impl TryFrom<String> for MemberClass {
     }
 }
 
-#[derive(Debug, serde::Serialize, Default)]
+#[derive(Debug, serde::Serialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum MemberType {
     #[default]
