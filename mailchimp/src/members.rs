@@ -40,6 +40,7 @@ pub fn member_id(email: &str) -> String {
 }
 
 pub fn is_valid_email(email: &str) -> bool {
+    let email = email.to_lowercase();
     !(email.is_empty() || email.ends_with("noemail.com") || email.ends_with("example.com"))
 }
 
