@@ -7,7 +7,6 @@ name = "aci-ddb"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "constcat",
  "futures",
  "serde",
  "serde_json",
@@ -378,12 +377,6 @@ name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
-
-[[package]]
-name = "constcat"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5cd0c57ef83705837b1cb872c973eff82b070846d3e23668322b2c0f8246d0"
 
 [[package]]
 name = "core-foundation"

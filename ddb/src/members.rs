@@ -1,18 +1,14 @@
-use crate::{clubs::Club, users::User, Error, Result, Stream};
-use constcat::concat;
-use futures::{StreamExt, TryStreamExt};
+use crate::{clubs::Club, users::User, Result};
 use sqlx::{MySql, MySqlPool};
 use std::{collections::HashMap, fmt};
 
-pub fn all(exec: &MySqlPool) -> Stream<Member> {
-    const QUERY: &str = concat!(
-        FETCH_MEMBERS_QUERY,
-        " AND paragraphs_item_field_data.parent_field_name = 'field_home_club'"
-    );
-    sqlx::query_as::<_, Member>(QUERY)
-        .fetch(exec)
-        .map_err(Error::from)
-        .boxed()
+pub async fn all(exec: &MySqlPool) -> Result<Vec<Member>> {
+    let all = fetch_members_query()
+        .push(" AND paragraphs_item_field_data.parent_field_name = 'field_home_club'")
+        .build_query_as::<Member>()
+        .fetch_all(exec)
+        .await?;
+    Ok(all)
 }
 
 pub async fn by_club(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {

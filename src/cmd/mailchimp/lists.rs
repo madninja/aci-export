@@ -190,7 +190,8 @@ impl Sync {
             let members = ddb::members::by_region(&db, region).await?;
             futures::stream::iter(members).map(Ok).boxed()
         } else {
-            ddb::members::all(&db)
+            let members = ddb::members::all(&db).await?;
+            futures::stream::iter(members).map(Ok).boxed()
         };
         let upserted = Arc::new(RwLock::new(HashSet::new()));
 

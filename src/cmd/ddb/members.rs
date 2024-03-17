@@ -1,7 +1,6 @@
 use crate::{cmd::print_json, settings::Settings, Result};
 use anyhow::anyhow;
 use ddb::members;
-use futures::TryStreamExt;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
@@ -95,7 +94,7 @@ pub struct All {}
 impl All {
     pub async fn run(&self, settings: &Settings) -> Result {
         let db = settings.database.connect().await?;
-        let members = members::all(&db).try_collect::<Vec<_>>().await?;
+        let members = members::all(&db).await?;
 
         print_json(&members)
     }
