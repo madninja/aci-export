@@ -34,16 +34,6 @@ name = "Primary"
 type = "text"
 
 [[merge_fields]]
-tag = "MTYPE"
-name = "Member Type"
-type = "text"
-
-[[merge_fields]]
-tag = "MCLASS"
-name = "Member Class"
-type = "text"
-
-[[merge_fields]]
 tag = "BDAY"
 name = "Birthday"
 type = "birthday"
