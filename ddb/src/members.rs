@@ -1,4 +1,5 @@
 use crate::{clubs::Club, users::User, Result};
+use futures::TryFutureExt;
 use sqlx::{MySql, MySqlPool};
 use std::{collections::HashMap, fmt};
 
@@ -152,11 +153,51 @@ fn fetch_members_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
     sqlx::QueryBuilder::new(FETCH_MEMBERS_QUERY)
 }
 
-fn fetch_mailing_address_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
-    sqlx::QueryBuilder::new(
-        r#"
+pub mod mailing_address {
+    use super::*;
+
+    pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Address>> {
+        let member = fetch_mailing_address_query()
+            .push("AND user__field_address.entity_id = ")
+            .push_bind(uid)
+            .build_query_as::<Address>()
+            .fetch_optional(exec)
+            .await?;
+        Ok(member)
+    }
+
+    pub async fn by_uids(exec: &MySqlPool, uids: &[u64]) -> Result<HashMap<u64, Address>> {
+        let mut builder = fetch_mailing_address_query();
+        let mut seperated = builder
+            .push("AND user__field_address.entity_id IN (")
+            .separated(", ");
+        for value in uids {
+            seperated.push_bind(value);
+        }
+        seperated.push_unseparated(") ");
+        let members: HashMap<u64, Address> = builder
+            .build_query_as::<Address>()
+            .fetch_all(exec)
+            .await?
+            .into_iter()
+            .filter_map(|address| address.user_id.map(|user_id| (user_id, address)))
+            .collect();
+        Ok(members)
+    }
+
+    pub async fn all(exec: &MySqlPool) -> Result<Vec<Address>> {
+        let members = fetch_mailing_address_query()
+            .build_query_as::<Address>()
+            .fetch_all(exec)
+            .await?;
+        Ok(members)
+    }
+
+    fn fetch_mailing_address_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
+        sqlx::QueryBuilder::new(
+            r#"
             SELECT
-                user__field_address.entity_id,
+                user__field_address.entity_id as user_id,
                 paragraph__field_address.field_address_value AS street_address,
                 paragraph__field_street_address_2.field_street_address_2_value AS street_address_2,
                 paragraph__field_zip_code.field_zip_code_value AS zip_code,
@@ -173,19 +214,10 @@ fn fetch_mailing_address_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql
                 LEFT JOIN paragraph__field_state_name ON mail.entity_id = paragraph__field_state_name.entity_id
                 LEFT JOIN paragraph__field_country ON mail.entity_id = paragraph__field_country.entity_id
             WHERE
-                mail.field_use_as_mailing_address_value = 1 AND
+                mail.field_use_as_mailing_address_value = 1 
             "#,
-    )
-}
-
-pub async fn mailing_address_by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Address>> {
-    let member = fetch_mailing_address_query()
-        .push("user__field_address.entity_id = ")
-        .push_bind(uid)
-        .build_query_as::<Address>()
-        .fetch_optional(exec)
-        .await?;
-    Ok(member)
+        )
+    }
 }
 
 #[derive(Debug, serde::Serialize, Default, PartialEq, Eq)]
@@ -313,8 +345,10 @@ pub struct Member {
     pub local_club: Club,
 }
 
-#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+#[derive(Debug, sqlx::FromRow, serde::Serialize, Clone)]
 pub struct Address {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<u64>,
     pub street_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub street_address_2: Option<String>,

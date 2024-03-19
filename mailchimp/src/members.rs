@@ -58,6 +58,50 @@ pub async fn upsert(
         .await
 }
 
+#[derive(Default, Debug, Deserialize)]
+pub struct MemberBatchUpsertResponse {
+    pub updated_members: Vec<Member>,
+    pub new_members: Vec<Member>,
+    pub total_created: u16,
+    pub total_updated: u16,
+    pub error_count: u16,
+    pub errors: Vec<MemberBatchUpsertError>,
+}
+
+#[derive(Default, Debug, Deserialize)]
+pub struct MemberBatchUpsertError {
+    pub email_address: String,
+    pub error: String,
+    pub error_code: String,
+    pub field: Option<String>,
+    pub field_message: Option<String>,
+}
+
+/// Recommended max batch upsert size.
+///
+/// The Mailchimp docs state that batches up to 500 can be upserted
+/// but in practice that size ends up timing out requests.   
+pub const MEMBER_BATCH_UPSERT_MAX: usize = 300;
+
+pub async fn batch_upsert(
+    client: &Client,
+    list_id: &str,
+    members: &[Member],
+) -> Result<MemberBatchUpsertResponse> {
+    #[derive(Serialize, Default)]
+    struct MemberBatchUpsertRequest<'a> {
+        members: &'a [Member],
+        update_existing: bool,
+    }
+    let batch_request = MemberBatchUpsertRequest {
+        members,
+        update_existing: true,
+    };
+    client
+        .post(&format!("/3.0/lists/{list_id}/",), &batch_request)
+        .await
+}
+
 pub mod tags {
     use super::*;
 
