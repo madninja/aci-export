@@ -15,6 +15,8 @@ pub type Future<T> = Pin<Box<dyn StdFuture<Output = Result<T>> + Send>>;
 pub type Stream<T> = Pin<Box<dyn StdStream<Item = Result<T>> + Send>>;
 
 mod error;
+
+pub mod batches;
 pub mod health;
 pub mod lists;
 pub mod members;
@@ -23,7 +25,7 @@ pub mod merge_fields;
 pub use error::{Error, Result};
 
 /// The default timeout for API requests
-pub const DEFAULT_TIMEOUT: u64 = 10;
+pub const DEFAULT_TIMEOUT: u64 = 20;
 /// A utility constant to pass an empty query slice to the various client fetch
 /// functions
 pub const NO_QUERY: &[&str; 0] = &[""; 0];
@@ -172,7 +174,14 @@ impl Client {
                             .boxed();
                     }
                     match response.error_for_status() {
-                        Ok(result) => result.json().map_err(error::Error::from).boxed(),
+                        Ok(result) => result
+                            .bytes()
+                            .map_err(Error::from)
+                            .and_then(|bytes| async move {
+                                // println!("{}", String::from_utf8_lossy(&bytes));
+                                serde_json::from_slice(&bytes).map_err(error::Error::from)
+                            })
+                            .boxed(),
                         Err(e) => future::err(error::Error::from(e)).boxed(),
                     }
                 })
@@ -244,6 +253,7 @@ impl Client {
                                 if bytes.is_empty() {
                                     serde_json::from_str("null").map_err(error::Error::from)
                                 } else {
+                                    // println!("{}", String::from_utf8_lossy(&bytes));
                                     serde_json::from_slice(&bytes).map_err(error::Error::from)
                                 }
                             })

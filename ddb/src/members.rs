@@ -1,5 +1,4 @@
 use crate::{clubs::Club, users::User, Result};
-use futures::TryFutureExt;
 use sqlx::{MySql, MySqlPool};
 use std::{collections::HashMap, fmt};
 
@@ -166,7 +165,10 @@ pub mod mailing_address {
         Ok(member)
     }
 
-    pub async fn by_uids(exec: &MySqlPool, uids: &[u64]) -> Result<HashMap<u64, Address>> {
+    pub async fn by_uids<I: IntoIterator<Item = u64>>(
+        exec: &MySqlPool,
+        uids: I,
+    ) -> Result<HashMap<u64, Address>> {
         let mut builder = fetch_mailing_address_query();
         let mut seperated = builder
             .push("AND user__field_address.entity_id IN (")

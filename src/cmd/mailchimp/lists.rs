@@ -5,7 +5,12 @@ use crate::{
 };
 use ddb::members::{MemberClass, MemberStatus, MemberType};
 use futures::{stream::StreamExt, TryStreamExt};
-use mailchimp::members::{MemberTagStatus, MemberTagUpdate, MEMBER_BATCH_UPSERT_MAX};
+use mailchimp::{
+    members::{
+        is_valid_email, member_id, MemberTagStatus, MemberTagUpdate, MEMBER_BATCH_UPSERT_MAX,
+    },
+    Client,
+};
 use serde_json::json;
 use std::{
     collections::{HashMap, HashSet},
@@ -191,25 +196,21 @@ impl Sync {
         } else {
             ddb::members::all(&db).await?
         };
-        let upserted = Arc::new(RwLock::new(HashSet::new()));
 
         // Fetch addresses for primary members
         let db_addresses: HashMap<u64, ddb::members::Address> =
             ddb::members::mailing_address::by_uids(
                 &db,
-                &db_members
-                    .iter()
-                    .map(|member| member.primary.uid)
-                    .collect::<Vec<u64>>(),
+                db_members.iter().map(|member| member.primary.uid), // .collect::<Vec<u64>>(),
             )
             .await?;
 
         // Convert ddb members to mailchimp members while injecting address
-        let mc_members: Vec<mailchimp::members::Member> = futures::stream::iter(db_members)
+        let mc_members: Vec<mailchimp::members::Member> = futures::stream::iter(&db_members)
             .map(|member| (member, &merge_fields, &db_addresses))
             .map(|(member, merge_fields, addresses)| {
                 let address = addresses.get(&member.primary.uid);
-                match to_members(&member, &address.cloned(), merge_fields) {
+                match to_members(member, &address.cloned(), merge_fields) {
                     Ok(members) => futures::stream::iter(members).map(Ok).boxed(),
                     Err(err) => futures::stream::once(async { Err(err) }).boxed(),
                 }
@@ -218,6 +219,7 @@ impl Sync {
             .try_collect::<Vec<_>>()
             .await?;
 
+        let upserted = Arc::new(RwLock::new(HashSet::new()));
         // chunk in max sizes and yse batch_upsert to upsert the members in the list
         futures::stream::iter(mc_members)
             .chunks(MEMBER_BATCH_UPSERT_MAX)
@@ -242,38 +244,13 @@ impl Sync {
             })
             .await?;
 
-        // Iterate through all mailchimp audience member. Collect all members that are not
-        // the upserted set by set subtraction
-        let mailchimp_stream = mailchimp::members::all(&client, list, Default::default());
-        let audience: HashSet<String> = mailchimp_stream
-            .map_err(Error::from)
-            .try_filter_map(|member| async move {
-                if member.status == Some(mailchimp::members::MemberStatus::Cleaned) {
-                    Ok(None)
-                } else {
-                    Ok(Some(member.id))
-                }
-            })
-            .try_collect::<Vec<_>>()
-            .await?
-            .into_iter()
-            .collect();
-
-        // don't process deletes for a single member sync
         let deleted = if self.member.is_none() {
-            let to_delete = &audience - &*upserted.read().await;
-            // Delete all to_delete entries
-            futures::stream::iter(to_delete.iter())
-                .map(|member_id| Ok::<_, crate::Error>((client.clone(), member_id)))
-                .try_for_each_concurrent(10, |(client, member_id)| async move {
-                    mailchimp::members::delete(&client, list, member_id).await?;
-                    Ok(())
-                })
-                .await?;
-            to_delete.len()
+            sync_deletes(&client, list, &*upserted.read().await).await?
         } else {
             0
         };
+
+        sync_tags(&client, list, &db_members).await?;
 
         let json = json!({
                 "upserted": upserted.read().await.len(),
@@ -281,6 +258,73 @@ impl Sync {
         });
         print_json(&json)
     }
+}
+
+async fn sync_deletes(client: &Client, list: &str, keep_keys: &HashSet<String>) -> Result<usize> {
+    // Iterate through all mailchimp audience member. Collect all members that are not
+    // the upserted set by set subtraction
+    let mailchimp_stream = mailchimp::members::all(client, list, Default::default());
+    let audience: HashSet<String> = mailchimp_stream
+        .map_err(Error::from)
+        .try_filter_map(|member| async move {
+            Ok(
+                (member.status != Some(mailchimp::members::MemberStatus::Cleaned))
+                    .then_some(member.id),
+            )
+        })
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .collect();
+
+    // don't process deletes for a single member sync
+    let to_delete = &audience - keep_keys;
+    // Delete all to_delete entries
+    futures::stream::iter(to_delete.iter())
+        .map(|member_id| Ok::<_, crate::Error>((client.clone(), member_id)))
+        .try_for_each_concurrent(10, |(client, member_id)| async move {
+            mailchimp::members::delete(&client, list, member_id).await?;
+            Ok(())
+        })
+        .await?;
+    Ok(to_delete.len())
+}
+
+async fn sync_tags(client: &Client, list_id: &str, members: &[ddb::members::Member]) -> Result {
+    futures::stream::iter(members)
+        .map(|member| {
+            let tag_updates = to_member_tag_updates(member);
+            let mut updates = Vec::with_capacity(2);
+            if is_valid_email(&member.primary.email) {
+                updates.push((
+                    member_id(&member.primary.email),
+                    member.primary.uid,
+                    tag_updates.clone(),
+                ));
+            }
+            if let Some(partner) = &member.partner {
+                if is_valid_email(&partner.email) {
+                    updates.push((member_id(&partner.email), partner.uid, tag_updates));
+                }
+            }
+            futures::stream::iter(updates)
+        })
+        .flatten()
+        .chunks(300)
+        .map(Ok::<Vec<_>, Error>)
+        .map_ok(|updates| (client.clone(), updates))
+        .try_for_each_concurrent(10, |(client, updates)| async move {
+            let mut batch = mailchimp::batches::Batch::default();
+            for (member_id, member_uid, updates) in updates {
+                let operation = mailchimp::members::tags::batch::update(
+                    &mut batch, list_id, &member_id, &updates,
+                )?;
+                operation.operation_id = member_uid.to_string();
+            }
+            batch.run(&client, true).await?;
+            Ok(())
+        })
+        .await
 }
 
 fn to_members(
