@@ -4,11 +4,18 @@ use crate::{
     Error, Result,
 };
 use ddb::members::{MemberClass, MemberStatus, MemberType};
-use futures::{stream::StreamExt, TryFutureExt, TryStreamExt};
-use mailchimp::members::{member_id, MemberTagStatus, MemberTagUpdate};
+use futures::{stream::StreamExt, TryStreamExt};
+use mailchimp::{
+    members::{
+        is_valid_email, member_id, MemberTagStatus, MemberTagUpdate, MEMBER_BATCH_UPSERT_MAX,
+    },
+    Client,
+};
 use serde_json::json;
-use sqlx::MySqlPool;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::RwLock;
 
 /// Commands on audience lists.
@@ -178,81 +185,72 @@ impl Sync {
         let client = Arc::new(settings.mailchimp.client()?);
         let db = settings.database.connect().await?;
 
-        let stream: ddb::Stream<ddb::members::Member> = if let Some(email) = &self.member {
-            let db_member = ddb::members::by_email(&db, email)
+        let db_members = if let Some(email) = &self.member {
+            vec![ddb::members::by_email(&db, email)
                 .await?
-                .ok_or(anyhow::anyhow!("Member not found: {email}"))?;
-            futures::stream::once(async { Ok(db_member) }).boxed()
+                .ok_or(anyhow::anyhow!("Member not found: {email}"))?]
         } else if let Some(club) = settings.mailchimp.club_override(self.club) {
-            let members = ddb::members::by_club(&db, club).await?;
-            futures::stream::iter(members).map(Ok).boxed()
+            ddb::members::by_club(&db, club).await?
         } else if let Some(region) = settings.mailchimp.region_override(self.region) {
-            let members = ddb::members::by_region(&db, region).await?;
-            futures::stream::iter(members).map(Ok).boxed()
+            ddb::members::by_region(&db, region).await?
         } else {
-            let members = ddb::members::all(&db).await?;
-            futures::stream::iter(members).map(Ok).boxed()
+            ddb::members::all(&db).await?
         };
-        let upserted = Arc::new(RwLock::new(HashSet::new()));
 
-        // Upsert from db stream into mailchimp, insert processed entries into
-        // a set to retain all ddb ids
-        stream
-            .map_err(Error::from)
-            .map_ok(|member| {
-                (
-                    client.clone(),
-                    db.clone(),
-                    &merge_fields,
-                    member,
-                    upserted.clone(),
-                )
-            })
-            .try_for_each_concurrent(
-                10,
-                |(client, db, merge_fields, member, processed)| async move {
-                    let upserted = upsert_member(&client, db, list, merge_fields, member).await?;
-                    let mut set = processed.write().await;
-                    upserted.into_iter().for_each(|entry| {
-                        set.insert(entry);
-                    });
-                    Ok(())
-                },
+        // Fetch addresses for primary members
+        let db_addresses: HashMap<u64, ddb::members::Address> =
+            ddb::members::mailing_address::by_uids(
+                &db,
+                db_members.iter().map(|member| member.primary.uid), // .collect::<Vec<u64>>(),
             )
             .await?;
 
-        // Iterate through all mailchimp audience member. Collect all members that are not
-        // the upserted set by set subtraction
-        let mailchimp_stream = mailchimp::members::all(&client, list, Default::default());
-        let audience: HashSet<String> = mailchimp_stream
-            .map_err(Error::from)
-            .try_filter_map(|member| async move {
-                if member.status == Some(mailchimp::members::MemberStatus::Cleaned) {
-                    Ok(None)
-                } else {
-                    Ok(Some(member.id))
+        // Convert ddb members to mailchimp members while injecting address
+        let mc_members: Vec<mailchimp::members::Member> = futures::stream::iter(&db_members)
+            .map(|member| (member, &merge_fields, &db_addresses))
+            .map(|(member, merge_fields, addresses)| {
+                let address = addresses.get(&member.primary.uid);
+                match to_members(member, &address.cloned(), merge_fields) {
+                    Ok(members) => futures::stream::iter(members).map(Ok).boxed(),
+                    Err(err) => futures::stream::once(async { Err(err) }).boxed(),
                 }
             })
+            .flatten()
             .try_collect::<Vec<_>>()
-            .await?
-            .into_iter()
-            .collect();
+            .await?;
 
-        // don't process deletes for a single member sync
+        let upserted = Arc::new(RwLock::new(HashSet::new()));
+        // chunk in max sizes and yse batch_upsert to upsert the members in the list
+        futures::stream::iter(mc_members)
+            .chunks(MEMBER_BATCH_UPSERT_MAX)
+            .map(Ok::<Vec<_>, Error>)
+            .map_ok(|members| (client.clone(), members, upserted.clone()))
+            .try_for_each_concurrent(10, |(client, members, processed)| async move {
+                let response = mailchimp::members::batch_upsert(&client, list, &members).await?;
+                let mut set = processed.write().await;
+                response
+                    .updated_members
+                    .into_iter()
+                    .chain(response.new_members)
+                    .for_each(|entry| {
+                        set.insert(entry.id);
+                    });
+                if response.error_count > 0 {
+                    response.errors.iter().for_each(|err| {
+                        println!("email: {} error: {}", err.email_address, err.error);
+                    })
+                }
+                Ok(())
+            })
+            .await?;
+
         let deleted = if self.member.is_none() {
-            let to_delete = &audience - &*upserted.read().await;
-            // Delete all to_delete entries
-            futures::stream::iter(to_delete.iter())
-                .map(|member_id| Ok::<_, crate::Error>((client.clone(), member_id)))
-                .try_for_each_concurrent(10, |(client, member_id)| async move {
-                    mailchimp::members::delete(&client, list, member_id).await?;
-                    Ok(())
-                })
-                .await?;
-            to_delete.len()
+            sync_deletes(&client, list, &*upserted.read().await).await?
         } else {
             0
         };
+
+        sync_tags(&client, list, &db_members).await?;
 
         let json = json!({
                 "upserted": upserted.read().await.len(),
@@ -262,52 +260,124 @@ impl Sync {
     }
 }
 
-async fn upsert_member(
-    client: &mailchimp::Client,
-    db: MySqlPool,
-    list_id: &str,
+async fn sync_deletes(client: &Client, list: &str, keep_keys: &HashSet<String>) -> Result<usize> {
+    // Iterate through all mailchimp audience member. Collect all members that are not
+    // the upserted set by set subtraction
+    let mailchimp_stream = mailchimp::members::all(client, list, Default::default());
+    let audience: HashSet<String> = mailchimp_stream
+        .map_err(Error::from)
+        .try_filter_map(|member| async move {
+            Ok(
+                (member.status != Some(mailchimp::members::MemberStatus::Cleaned))
+                    .then_some(member.id),
+            )
+        })
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .collect();
+
+    // don't process deletes for a single member sync
+    let to_delete = &audience - keep_keys;
+    // Delete all to_delete entries
+    futures::stream::iter(to_delete.iter())
+        .map(|member_id| Ok::<_, crate::Error>((client.clone(), member_id)))
+        .try_for_each_concurrent(10, |(client, member_id)| async move {
+            mailchimp::members::delete(&client, list, member_id).await?;
+            Ok(())
+        })
+        .await?;
+    Ok(to_delete.len())
+}
+
+async fn sync_tags(client: &Client, list_id: &str, members: &[ddb::members::Member]) -> Result {
+    futures::stream::iter(members)
+        .map(|member| {
+            let tag_updates = to_member_tag_updates(member);
+            let mut updates = Vec::with_capacity(2);
+            if is_valid_email(&member.primary.email) {
+                updates.push((
+                    member_id(&member.primary.email),
+                    member.primary.uid,
+                    tag_updates.clone(),
+                ));
+            }
+            if let Some(partner) = &member.partner {
+                if is_valid_email(&partner.email) {
+                    updates.push((member_id(&partner.email), partner.uid, tag_updates));
+                }
+            }
+            futures::stream::iter(updates)
+        })
+        .flatten()
+        .chunks(300)
+        .map(Ok::<Vec<_>, Error>)
+        .map_ok(|updates| (client.clone(), updates))
+        .try_for_each_concurrent(10, |(client, updates)| async move {
+            let mut batch = mailchimp::batches::Batch::default();
+            for (member_id, member_uid, updates) in updates {
+                let operation = mailchimp::members::tags::batch::update(
+                    &mut batch, list_id, &member_id, &updates,
+                )?;
+                operation.operation_id = member_uid.to_string();
+            }
+            batch.run(&client, true).await?;
+            Ok(())
+        })
+        .await
+}
+
+fn to_members(
+    member: &ddb::members::Member,
+    address: &Option<ddb::members::Address>,
     merge_fields: &mailchimp::merge_fields::MergeFields,
-    member: ddb::members::Member,
-) -> Result<Vec<String>> {
-    let address = ddb::members::mailing_address_by_uid(&db, member.primary.uid).await?;
-    let primary = to_member(&member, &address, &member.primary, merge_fields).await?;
-    let tag_updates = to_member_tag_updates(&member);
+) -> Result<Vec<mailchimp::members::Member>> {
+    let primary = to_member(member, address, &member.primary, merge_fields)?;
 
-    let mut processed = Vec::with_capacity(2);
-
-    if let Some(parnter_user) = &member.partner {
-        let mut partner = to_member(&member, &address, parnter_user, merge_fields).await?;
+    let mut result = Vec::with_capacity(2);
+    if let Some(partner_user) = &member.partner {
+        let mut partner = to_member(member, address, partner_user, merge_fields)?;
         if let Some(ref mut merge_fields) = partner.merge_fields {
             merge_fields.insert("PRIMARY".into(), member.primary.email.clone().into());
         }
         if mailchimp::members::is_valid_email(&partner.email_address) {
-            let member_id = member_id(&partner.email_address);
-            // println!("Partner {}", partner.email_address);
-            mailchimp::members::upsert(client, list_id, &member_id, &partner)
-                .map_ok(|_| ())
-                .and_then(|_| {
-                    mailchimp::members::tags::update(client, list_id, &member_id, &tag_updates)
-                })
-                .or_else(|err| handle_mailchimp_error("partner", parnter_user, err))
-                .await?;
-            processed.push(member_id);
+            result.push(partner);
         }
     }
 
     if mailchimp::members::is_valid_email(&primary.email_address) {
-        let member_id = member_id(&primary.email_address);
-        // println!("Primary {}", primary.email_address);
-        mailchimp::members::upsert(client, list_id, &member_id, &primary)
-            .map_ok(|_| ())
-            .and_then(|_| {
-                mailchimp::members::tags::update(client, list_id, &member_id, &tag_updates)
-            })
-            .or_else(|err| handle_mailchimp_error("primary", &member.primary, err))
-            .await?;
-        processed.push(member_id);
+        result.push(primary);
     }
 
-    Ok(processed)
+    Ok(result)
+}
+
+fn to_member(
+    member: &ddb::members::Member,
+    address: &Option<ddb::members::Address>,
+    user: &ddb::users::User,
+    merge_fields: &mailchimp::merge_fields::MergeFields,
+) -> Result<mailchimp::members::Member> {
+    let user_fields: Vec<mailchimp::merge_fields::MergeFieldValue> = [
+        merge_fields.to_value("FNAME", user.first_name.as_ref()),
+        merge_fields.to_value("LNAME", user.last_name.as_ref()),
+        merge_fields.to_value("UID", user.uid),
+        merge_fields.to_value("BDAY", user.birthday),
+        merge_fields.to_value("JOIN", member.join_date),
+        merge_fields.to_value("EXPIRE", member.expiration_date),
+    ]
+    .into_iter()
+    .filter_map(|value| value.map_err(Error::from).transpose())
+    .chain(address_to_values(address, merge_fields).into_iter())
+    .chain(club_to_values(&member.local_club, merge_fields).into_iter())
+    .collect::<Result<Vec<mailchimp::merge_fields::MergeFieldValue>>>()?;
+    Ok(mailchimp::members::Member {
+        id: mailchimp::members::member_id(&user.email),
+        email_address: user.email.clone(),
+        merge_fields: Some(user_fields.into_iter().collect()),
+        status_if_new: Some(mailchimp::members::MemberStatus::Subscribed),
+        ..Default::default()
+    })
 }
 
 fn to_member_tag_updates(member: &ddb::members::Member) -> Vec<MemberTagUpdate> {
@@ -337,34 +407,6 @@ fn to_member_tag_updates(member: &ddb::members::Member) -> Vec<MemberTagUpdate> 
             m.member_status == MemberStatus::Lapsed
         }),
     ]
-}
-
-async fn to_member(
-    member: &ddb::members::Member,
-    address: &Option<ddb::members::Address>,
-    user: &ddb::users::User,
-    merge_fields: &mailchimp::merge_fields::MergeFields,
-) -> Result<mailchimp::members::Member> {
-    let user_fields: Vec<mailchimp::merge_fields::MergeFieldValue> = [
-        merge_fields.to_value("FNAME", user.first_name.as_ref()),
-        merge_fields.to_value("LNAME", user.last_name.as_ref()),
-        merge_fields.to_value("UID", user.uid),
-        merge_fields.to_value("BDAY", user.birthday),
-        merge_fields.to_value("JOIN", member.join_date),
-        merge_fields.to_value("EXPIRE", member.expiration_date),
-    ]
-    .into_iter()
-    .filter_map(|value| value.map_err(Error::from).transpose())
-    .chain(address_to_values(address, merge_fields).into_iter())
-    .chain(club_to_values(&member.local_club, merge_fields).into_iter())
-    .collect::<Result<Vec<mailchimp::merge_fields::MergeFieldValue>>>()?;
-    Ok(mailchimp::members::Member {
-        id: mailchimp::members::member_id(&user.email),
-        email_address: user.email.clone(),
-        merge_fields: Some(user_fields.into_iter().collect()),
-        status_if_new: Some(mailchimp::members::MemberStatus::Subscribed),
-        ..Default::default()
-    })
 }
 
 fn address_to_values(
@@ -397,21 +439,4 @@ fn club_to_values(
     .into_iter()
     .filter_map(|value| value.map_err(Error::from).transpose())
     .collect()
-}
-
-async fn handle_mailchimp_error(
-    kind: &'static str,
-    user: &ddb::users::User,
-    err: mailchimp::Error,
-) -> mailchimp::Result {
-    match err {
-        mailchimp::Error::Mailchimp(err) if err.status == 400 => {
-            eprintln!(
-                "Mailchimp {} email: {} error: {}",
-                kind, user.email, err.detail
-            );
-            Ok(())
-        }
-        other => Err(other),
-    }
 }

@@ -17,12 +17,12 @@ sqlx = { version = "0", features = ["runtime-tokio-rustls", "mysql", "chrono"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures = "0"
+tokio = { version = "1", features = ["full"] }
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 config = { version = "0", default-features = false, features = ["toml"] }
-tokio = { version = "1", features = ["full"] }
 csv = "1"
 mailchimp-api = { git = "https://github.com/oxidecomputer/third-party-api-clients.git" }
 ddb = { package = "aci-ddb", path = "ddb" }
@@ -32,3 +32,4 @@ futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
+tokio = { workspace = true }
