@@ -62,3 +62,8 @@ type = "date"
 tag = "EXPIRE"
 name = "Expiration Date"
 type = "date"
+
+[[merge_fields]]
+tag = "LLOGIN"
+name = "Last Login"
+type = "date"

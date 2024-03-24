@@ -363,6 +363,7 @@ fn to_member(
         merge_fields.to_value("LNAME", user.last_name.as_ref()),
         merge_fields.to_value("UID", user.uid),
         merge_fields.to_value("BDAY", user.birthday),
+        merge_fields.to_value("LLOGIN", user.last_login),
         merge_fields.to_value("JOIN", member.join_date),
         merge_fields.to_value("EXPIRE", member.expiration_date),
     ]
