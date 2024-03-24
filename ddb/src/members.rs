@@ -79,12 +79,14 @@ const FETCH_MEMBERS_QUERY: &str = r#"
     	alldata.first_name AS first_name,
     	alldata.last_name AS last_name,
         CAST(alldata.birthdate AS DATE) AS birthday,
+        DATE(FROM_UNIXTIME(users_field_data.login)) AS last_login,
 
        	CAST(alldata.partner_user_id AS UNSIGNED) AS partner_uid,
     	alldata.partner_email AS partner_email,
     	alldata.partner_first_name AS partner_first_name,
     	alldata.partner_last_name AS partner_last_name,
         CAST(alldata.partner_birthdate AS DATE) AS partner_birthday,
+        DATE(FROM_UNIXTIME(users_field_data.login)) AS partner_last_login,
 
     	IF(memclassterm.name IS NULL, "Regular", memclassterm.name) AS member_class,
     	paragraphs_item_field_data.parent_field_name AS member_type,
@@ -370,6 +372,8 @@ struct PartnerUser {
     partner_last_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     partner_birthday: Option<chrono::NaiveDate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partner_last_login: Option<chrono::NaiveDate>,
 }
 
 impl From<PartnerUser> for Option<User> {
@@ -381,6 +385,7 @@ impl From<PartnerUser> for Option<User> {
                 first_name: value.partner_first_name,
                 last_name: value.partner_last_name,
                 birthday: value.partner_birthday,
+                last_login: value.partner_last_login,
             })
         } else {
             None
