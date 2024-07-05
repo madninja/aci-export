@@ -201,7 +201,7 @@ impl Sync {
         let db_addresses: HashMap<u64, ddb::members::Address> =
             ddb::members::mailing_address::by_uids(
                 &db,
-                db_members.iter().map(|member| member.primary.uid), // .collect::<Vec<u64>>(),
+                db_members.iter().map(|member| member.primary.uid),
             )
             .await?;
 

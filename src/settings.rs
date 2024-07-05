@@ -87,21 +87,21 @@ pub fn read_toml<'de, T: serde::Deserialize<'de>>(path: &str) -> Result<T> {
 }
 
 pub fn read_merge_fields(path: &str) -> Result<mailchimp::merge_fields::MergeFields> {
-    #[derive(Debug, serde::Deserialize, serde::Serialize)]
-    struct MergeFieldsConfig {
-        merge_fields: Vec<mailchimp::merge_fields::MergeField>,
-    }
-    impl TryFrom<MergeFieldsConfig> for mailchimp::merge_fields::MergeFields {
-        type Error = Error;
-        fn try_from(config: MergeFieldsConfig) -> Result<Self> {
-            for field in config.merge_fields.iter() {
-                if field.tag.len() > 10 {
-                    bail!("Merge field tag too long: {}", field.tag);
-                }
-            }
-            Ok(config.merge_fields.into_iter().collect())
-        }
-    }
-
     read_toml::<MergeFieldsConfig>(path).and_then(TryInto::try_into)
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+struct MergeFieldsConfig {
+    merge_fields: Vec<mailchimp::merge_fields::MergeField>,
+}
+impl TryFrom<MergeFieldsConfig> for mailchimp::merge_fields::MergeFields {
+    type Error = Error;
+    fn try_from(config: MergeFieldsConfig) -> Result<Self> {
+        for field in config.merge_fields.iter() {
+            if field.tag.len() > 10 {
+                bail!("Merge field tag too long: {}", field.tag);
+            }
+        }
+        Ok(config.merge_fields.into_iter().collect())
+    }
 }

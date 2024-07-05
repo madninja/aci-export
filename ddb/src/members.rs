@@ -18,7 +18,7 @@ pub async fn by_club(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
         .build_query_as::<Member>()
         .fetch_all(exec)
         .await?;
-    Ok(members)
+    Ok(dedupe_members(members))
 }
 
 pub async fn by_region(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
