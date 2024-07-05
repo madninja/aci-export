@@ -11,6 +11,8 @@ pub struct User {
     pub last_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub birthday: Option<chrono::NaiveDate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_login: Option<chrono::NaiveDate>,
 }
 
 fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
@@ -22,6 +24,7 @@ fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
                 user__field_first_name.field_first_name_value AS first_name,
                 user__field_last_name.field_last_name_value AS last_name,
                 CAST(user__field_birth_date.field_birth_date_value AS DATE) AS birthday
+                DATE(FROM_UNIXTIME(users_field_data.login)) AS last_login
             FROM
                 users_field_data
                 LEFT JOIN user__field_first_name ON users_field_data.uid = user__field_first_name.entity_id

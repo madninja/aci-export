@@ -464,7 +464,6 @@ impl<'de> serde::de::Visitor<'de> for I32Visitor {
     where
         E: serde::de::Error,
     {
-        use std::i32;
         if value >= i64::from(i32::MIN) && value <= i64::from(i32::MAX) {
             Ok(value as i32)
         } else {
