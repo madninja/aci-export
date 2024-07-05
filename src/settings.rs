@@ -2,7 +2,7 @@ use crate::{Error, Result};
 use anyhow::{anyhow, bail, Context};
 use config::{Config, Environment, File};
 use serde::Deserialize;
-use sqlx::MySqlPool;
+use sqlx::{Executor, MySqlPool};
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +34,15 @@ impl DatabaseSettings {
         let pool = MySqlPool::connect(&self.url)
             .await
             .context("opening database")?;
+        let _ = pool
+            .execute(
+                r#"
+            SET GLOBAL table_definition_cache = 4096;
+            SET GLOBAL table_open_cache = 4096;
+        "#,
+            )
+            .await
+            .context("preparing database caches")?;
         Ok(pool)
     }
 }
