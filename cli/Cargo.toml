@@ -1,0 +1,24 @@
+[package]
+name = "aci-export"
+version = "0.1.2"
+edition = "2021"
+
+[[bin]]
+name = "aci-export"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+anyhow = "1"
+csv = "1"
+clap = { version = "4", features = ["derive"] }
+config = { version = "0", default-features = false, features = ["toml"] }
+mailchimp-api = { version = "0" }
+ddb = { package = "aci-ddb", path = "../ddb" }
+mailchimp = { package = "mailchimp", path = "../mailchimp" }
+chrono = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }

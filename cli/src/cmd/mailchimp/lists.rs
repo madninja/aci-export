@@ -225,7 +225,7 @@ impl Sync {
             .chunks(MEMBER_BATCH_UPSERT_MAX)
             .map(Ok::<Vec<_>, Error>)
             .map_ok(|members| (client.clone(), members, upserted.clone()))
-            .try_for_each_concurrent(10, |(client, members, processed)| async move {
+            .try_for_each_concurrent(8, |(client, members, processed)| async move {
                 let response = mailchimp::members::batch_upsert(&client, list, &members).await?;
                 let mut set = processed.write().await;
                 response
