@@ -1,6 +1,6 @@
 use crate::{
-    deserialize_null_string, paged_query_impl, paged_response_impl, query_default_impl, Client,
-    Result, Stream, NO_QUERY,
+    deserialize_null_string, paged_query_impl, paged_response_impl, query_default_impl,
+    read_config, Client, Result, Stream, NO_QUERY,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -75,6 +75,15 @@ pub struct List {
     pub has_welcome: bool,
     #[serde(default)]
     pub marketing_permissions: bool,
+}
+
+impl List {
+    pub fn from_config<S>(source: S) -> Result<Self>
+    where
+        S: config::Source + Send + Sync + 'static,
+    {
+        read_config(source)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

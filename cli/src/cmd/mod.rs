@@ -18,10 +18,10 @@ pub enum Format {
 }
 
 impl Format {
-    pub async fn output<'a, W, E>(
+    pub async fn output<W, E>(
         &self,
         output: W,
-        mut rows: BoxStream<'a, std::result::Result<E, sqlx::Error>>,
+        mut rows: BoxStream<'_, std::result::Result<E, sqlx::Error>>,
     ) -> Result
     where
         W: std::io::Write,

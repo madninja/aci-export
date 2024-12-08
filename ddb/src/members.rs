@@ -1,8 +1,12 @@
-use crate::{clubs::Club, users::User, Result};
-use sqlx::{MySql, MySqlPool};
+use crate::{clubs, clubs::Club, users::User, Result};
+use itertools::Itertools;
+use sqlx::{MySql, MySqlExecutor};
 use std::{collections::HashMap, fmt};
 
-pub async fn all(exec: &MySqlPool) -> Result<Vec<Member>> {
+pub async fn all<'c, E>(exec: E) -> Result<Vec<Member>>
+where
+    E: sqlx::MySqlExecutor<'c>,
+{
     let all = fetch_members_query()
         .push(" AND paragraphs_item_field_data.parent_field_name = 'field_home_club'")
         .build_query_as::<Member>()
@@ -11,7 +15,10 @@ pub async fn all(exec: &MySqlPool) -> Result<Vec<Member>> {
     Ok(dedupe_members(all))
 }
 
-pub async fn by_club(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
+pub async fn by_club<'c, E>(exec: E, uid: u64) -> Result<Vec<Member>>
+where
+    E: MySqlExecutor<'c>,
+{
     let members = fetch_members_query()
         .push("AND node_field_data_paragraph__field_club.nid = ")
         .push_bind(uid)
@@ -21,7 +28,10 @@ pub async fn by_club(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
     Ok(dedupe_members(members))
 }
 
-pub async fn by_region(exec: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
+pub async fn by_region<'c, E>(exec: E, uid: u64) -> Result<Vec<Member>>
+where
+    E: MySqlExecutor<'c>,
+{
     let all = fetch_members_query()
         .push("AND node_field_data_node__field_region.nid = ")
         .push_bind(uid)
@@ -49,7 +59,10 @@ pub fn dedupe_members(members: Vec<Member>) -> Vec<Member> {
     member_map.into_values().collect()
 }
 
-pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Member>> {
+pub async fn by_uid<'c, E>(exec: E, uid: u64) -> Result<Option<Member>>
+where
+    E: MySqlExecutor<'c>,
+{
     let member = fetch_members_query()
         .push("AND paragraphs_item_field_data.parent_field_name = 'field_home_club'")
         .push("AND users_field_data.uid = ")
@@ -61,7 +74,10 @@ pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Member>> {
     Ok(member)
 }
 
-pub async fn by_email(exec: &MySqlPool, email: &str) -> Result<Option<Member>> {
+pub async fn by_email<'c, E>(exec: E, email: &str) -> Result<Option<Member>>
+where
+    E: MySqlExecutor<'c>,
+{
     let member = fetch_members_query()
         .push("AND users_field_data.mail = ")
         .push_bind(email)
@@ -157,7 +173,10 @@ fn fetch_members_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
 pub mod mailing_address {
     use super::*;
 
-    pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Address>> {
+    pub async fn by_uid<'c, E>(exec: E, uid: u64) -> Result<Option<Address>>
+    where
+        E: MySqlExecutor<'c>,
+    {
         let member = fetch_mailing_address_query()
             .push("AND user__field_address.entity_id = ")
             .push_bind(uid)
@@ -167,10 +186,13 @@ pub mod mailing_address {
         Ok(member)
     }
 
-    pub async fn by_uids<I: IntoIterator<Item = u64>>(
-        exec: &MySqlPool,
+    pub async fn by_uids<'c, I: IntoIterator<Item = u64>, E>(
+        exec: E,
         uids: I,
-    ) -> Result<HashMap<u64, Address>> {
+    ) -> Result<HashMap<u64, Address>>
+    where
+        E: MySqlExecutor<'c>,
+    {
         let mut builder = fetch_mailing_address_query();
         let mut seperated = builder
             .push("AND user__field_address.entity_id IN (")
@@ -189,7 +211,21 @@ pub mod mailing_address {
         Ok(members)
     }
 
-    pub async fn all(exec: &MySqlPool) -> Result<Vec<Address>> {
+    /// Get addresses for given members primary user ids
+    pub async fn for_members<'c, E>(
+        exec: E,
+        members: impl IntoIterator<Item = &Member>,
+    ) -> Result<HashMap<u64, Address>>
+    where
+        E: MySqlExecutor<'c>,
+    {
+        by_uids(exec, members.into_iter().map(|member| member.primary.uid)).await
+    }
+
+    pub async fn all<'c, E>(exec: E) -> Result<Vec<Address>>
+    where
+        E: MySqlExecutor<'c>,
+    {
         let members = fetch_mailing_address_query()
             .build_query_as::<Address>()
             .fetch_all(exec)
@@ -347,6 +383,164 @@ pub struct Member {
     pub join_date: Option<chrono::NaiveDate>,
     #[sqlx(flatten, try_from = "LocalClub")]
     pub local_club: Club,
+}
+
+pub mod mailchimp {
+    use super::*;
+    use ::mailchimp as mc;
+
+    pub fn to_tag_updates(members: &[Member]) -> Vec<(String, Vec<mc::members::MemberTagUpdate>)> {
+        members
+            .iter()
+            .flat_map(|member| {
+                let tag_updates = to_member_tag_updates(member);
+                let mut updates = Vec::with_capacity(2);
+                if mc::members::is_valid_email(&member.primary.email) {
+                    updates.push((
+                        mc::members::member_id(&member.primary.email),
+                        tag_updates.clone(),
+                    ));
+                }
+                if let Some(partner) = &member.partner {
+                    if mc::members::is_valid_email(&partner.email) {
+                        updates.push((mc::members::member_id(&partner.email), tag_updates));
+                    }
+                }
+                updates
+            })
+            .collect_vec()
+    }
+
+    fn to_member_tag_updates(member: &Member) -> Vec<mc::members::MemberTagUpdate> {
+        fn to_update<F: Fn(&Member) -> bool>(
+            name: &str,
+            member: &Member,
+            f: F,
+        ) -> mc::members::MemberTagUpdate {
+            let status = if f(member) {
+                mc::members::MemberTagStatus::Active
+            } else {
+                mc::members::MemberTagStatus::Inactive
+            };
+            mc::members::MemberTagUpdate {
+                name: name.to_string(),
+                status,
+            }
+        }
+        vec![
+            to_update("affiliate", member, |m| {
+                m.member_type == MemberType::Affiliate
+            }),
+            to_update("lifetime", member, |m| {
+                m.member_class == MemberClass::Lifetime
+            }),
+            to_update("lapsed", member, |m| {
+                m.member_status == MemberStatus::Lapsed
+            }),
+        ]
+    }
+    pub async fn to_members_with_address(
+        members: &[Member],
+        addresses: &HashMap<u64, Address>,
+        merge_fields: &mc::merge_fields::MergeFields,
+    ) -> mc::Result<Vec<mc::members::Member>> {
+        // Convert ddb members to mailchimp members while injecting address
+        let result_vecs: Vec<Vec<mc::members::Member>> = members
+            .iter()
+            .map(|member| {
+                let address = addresses.get(&member.primary.uid);
+                to_members(member, &address.cloned(), merge_fields)
+            })
+            .try_collect()?;
+
+        Ok(result_vecs.into_iter().flatten().collect())
+    }
+
+    pub fn to_members(
+        member: &Member,
+        address: &Option<Address>,
+        merge_fields: &mc::merge_fields::MergeFields,
+    ) -> mc::Result<Vec<mc::members::Member>> {
+        let primary = to_member(member, address, &member.primary, merge_fields)?;
+
+        let mut result = Vec::with_capacity(2);
+        if let Some(partner_user) = &member.partner {
+            let mut partner = to_member(member, address, partner_user, merge_fields)?;
+            if let Some(ref mut merge_fields) = partner.merge_fields {
+                merge_fields.insert("PRIMARY".into(), member.primary.email.clone().into());
+            }
+            if mc::members::is_valid_email(&partner.email_address) {
+                result.push(partner);
+            }
+        }
+
+        if mc::members::is_valid_email(&primary.email_address) {
+            result.push(primary);
+        }
+
+        Ok(result)
+    }
+
+    fn to_member(
+        member: &Member,
+        address: &Option<Address>,
+        user: &User,
+        merge_fields: &mc::merge_fields::MergeFields,
+    ) -> mc::Result<mc::members::Member> {
+        let user_fields: Vec<mc::merge_fields::MergeFieldValue> = [
+            merge_fields.to_value("FNAME", user.first_name.as_ref()),
+            merge_fields.to_value("LNAME", user.last_name.as_ref()),
+            merge_fields.to_value("UID", user.uid),
+            merge_fields.to_value("BDAY", user.birthday),
+            merge_fields.to_value("LLOGIN", user.last_login),
+            merge_fields.to_value("JOIN", member.join_date),
+            merge_fields.to_value("EXPIRE", member.expiration_date),
+        ]
+        .into_iter()
+        .filter_map(|value| value.map_err(mc::Error::from).transpose())
+        .chain(address_to_values(address, merge_fields).into_iter())
+        .chain(club_to_values(&member.local_club, merge_fields).into_iter())
+        .collect::<mc::Result<Vec<mc::merge_fields::MergeFieldValue>>>()?;
+        Ok(mc::members::Member {
+            id: mc::members::member_id(&user.email),
+            email_address: user.email.clone(),
+            merge_fields: Some(user_fields.into_iter().collect()),
+            status_if_new: Some(mc::members::MemberStatus::Subscribed),
+            ..Default::default()
+        })
+    }
+
+    fn address_to_values(
+        address: &Option<Address>,
+        merge_fields: &mc::merge_fields::MergeFields,
+    ) -> Vec<mc::Result<mc::merge_fields::MergeFieldValue>> {
+        let Some(address) = address.as_ref() else {
+            return vec![];
+        };
+
+        vec![
+            merge_fields.to_value("ZIP", address.zip_code.as_ref()),
+            merge_fields.to_value("STATE", address.state.as_ref()),
+            merge_fields.to_value("COUNTRY", address.country.as_ref()),
+        ]
+        .into_iter()
+        .filter_map(|value| value.map_err(mc::Error::from).transpose())
+        .collect()
+    }
+
+    fn club_to_values(
+        club: &clubs::Club,
+        merge_fields: &mc::merge_fields::MergeFields,
+    ) -> Vec<mc::Result<mc::merge_fields::MergeFieldValue>> {
+        vec![
+            merge_fields.to_value("CLUB", club.name.as_str()),
+            merge_fields.to_value("CLUB_NR", club.number),
+            merge_fields.to_value("REGION", club.region as u64),
+        ]
+        .into_iter()
+        .filter_map(|value| value.map_err(mc::Error::from).transpose())
+        .collect()
+    }
 }
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize, Clone)]

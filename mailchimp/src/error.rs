@@ -19,6 +19,10 @@ pub enum Error {
     Number(String),
     #[error("invalid merge type: {0}")]
     InvalidMergeType(String),
+    #[error("invalid merge field: {0}")]
+    InvalidMergeField(String),
+    #[error("config: {0}")]
+    Config(#[from] config::ConfigError),
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -41,5 +45,9 @@ impl Error {
 
     pub fn mailchimp(value: MailchimError) -> Self {
         Self::Mailchimp(value)
+    }
+
+    pub fn merge_field<S: ToString>(msg: S) -> Self {
+        Self::InvalidMergeField(msg.to_string())
     }
 }

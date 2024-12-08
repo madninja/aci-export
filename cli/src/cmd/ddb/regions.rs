@@ -1,7 +1,6 @@
 use crate::{cmd::print_json, settings::Settings, Result};
 use anyhow::anyhow;
 use ddb::regions;
-use futures::TryStreamExt;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
@@ -70,8 +69,7 @@ pub struct List {}
 impl List {
     pub async fn run(&self, settings: &Settings) -> Result {
         let db = settings.database.connect().await?;
-        let regions: Vec<regions::Region> = regions::all(&db).try_collect().await?;
-
+        let regions = regions::all(&db).await?;
         print_json(&regions)
     }
 }

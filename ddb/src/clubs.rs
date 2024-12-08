@@ -1,15 +1,21 @@
-use crate::{Error, Result, Stream};
-use futures::{StreamExt, TryStreamExt};
-use sqlx::{MySql, MySqlPool};
+use crate::{Error, Result};
+use futures::TryFutureExt;
+use sqlx::{MySql, MySqlExecutor};
 
-pub fn all(exec: &MySqlPool) -> Stream<Club> {
+pub async fn all<'c, E>(exec: E) -> Result<Vec<Club>>
+where
+    E: MySqlExecutor<'c>,
+{
     sqlx::query_as::<_, Club>(FETCH_CLUBS_QUERY)
-        .fetch(exec)
+        .fetch_all(exec)
         .map_err(Error::from)
-        .boxed()
+        .await
 }
 
-pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Club>> {
+pub async fn by_uid<'c, E>(exec: E, uid: u64) -> Result<Option<Club>>
+where
+    E: MySqlExecutor<'c>,
+{
     let club = fetch_clubs_query()
         .push("where field_club_target_id = ")
         .push_bind(uid)
@@ -20,7 +26,10 @@ pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Club>> {
     Ok(club)
 }
 
-pub async fn by_number(exec: &MySqlPool, number: i32) -> Result<Option<Club>> {
+pub async fn by_number<'c, E>(exec: E, number: i32) -> Result<Option<Club>>
+where
+    E: MySqlExecutor<'c>,
+{
     let club = fetch_clubs_query()
         .push("where cn.field_club_number_value = ")
         .push_bind(number)
