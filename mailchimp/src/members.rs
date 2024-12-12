@@ -55,7 +55,9 @@ pub async fn retain(client: &Client, list_id: &str, keep_keys: &HashSet<String>)
     futures::stream::iter(to_delete.iter())
         .map(|member_id| Ok::<_, crate::Error>((client.clone(), member_id)))
         .try_for_each_concurrent(10, |(client, member_id)| async move {
-            delete(&client, list_id, member_id).await?;
+            delete(&client, list_id, member_id)
+                .await
+                .inspect_err(|err| tracing::error!(id = member_id, ?err, "failed to delete"))?;
             Ok(())
         })
         .await?;

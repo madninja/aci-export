@@ -1,6 +1,7 @@
 use crate::{settings::AciDatabaseSettings, Error, Result};
 use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
+use sqlx::{query::QueryAs, Database, Encode, Type};
 use tokio_cron_scheduler::{Job as CronJob, JobScheduler};
 
 #[derive(Debug, sqlx::FromRow, Clone, serde::Serialize, Default)]
@@ -14,6 +15,78 @@ pub struct Job {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<i32>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct JobUpdate {
+    pub id: i64,
+    pub name: Option<String>,
+    pub api_key: Option<String>,
+    pub list: Option<String>,
+    pub club: Option<i64>,
+    pub region: Option<i32>,
+}
+
+trait MaybeBind<'q, DB>
+where
+    DB: Database,
+{
+    fn maybe_bind<T>(self, v: &'q Option<T>) -> Self
+    where
+        T: 'q + Encode<'q, DB> + Type<DB>;
+}
+
+impl<'q, DB, O> MaybeBind<'q, DB> for QueryAs<'q, DB, O, <DB as Database>::Arguments<'q>>
+where
+    DB: Database,
+{
+    fn maybe_bind<T>(self, v: &'q Option<T>) -> Self
+    where
+        T: 'q + Encode<'q, DB> + Type<DB>,
+    {
+        if let Some(value) = v {
+            self.bind(value)
+        } else {
+            self
+        }
+    }
+}
+
+impl JobUpdate {
+    pub fn setters(&self) -> Vec<String> {
+        fn maybe_setter<T>(v: &Option<T>, name: &str, index: &mut u8, results: &mut Vec<String>) {
+            if v.is_some() {
+                results.push(format!("{name} = ${index}"));
+                *index += 1;
+            }
+        }
+        let mut index: u8 = 2;
+        let mut results = vec![];
+        maybe_setter(&self.name, "name", &mut index, &mut results);
+        maybe_setter(&self.api_key, "api_key", &mut index, &mut results);
+        maybe_setter(&self.list, "list", &mut index, &mut results);
+        maybe_setter(&self.club, "club", &mut index, &mut results);
+        maybe_setter(&self.region, "region", &mut index, &mut results);
+        results
+    }
+
+    pub fn binds<'q, DB, O>(
+        &'q self,
+        q: QueryAs<'q, DB, O, <DB as Database>::Arguments<'q>>,
+    ) -> QueryAs<'q, DB, O, <DB as Database>::Arguments<'q>>
+    where
+        DB: Database,
+        i32: Encode<'q, DB> + Type<DB>,
+        i64: Encode<'q, DB> + Type<DB>,
+        String: Encode<'q, DB> + Type<DB>,
+    {
+        q.bind(self.id)
+            .maybe_bind(&self.name)
+            .maybe_bind(&self.api_key)
+            .maybe_bind(&self.list)
+            .maybe_bind(&self.club)
+            .maybe_bind(&self.region)
+    }
 }
 
 impl Job {
@@ -101,31 +174,26 @@ impl Job {
         .await
     }
 
-    pub async fn update<'c, E>(db: E, job: &Self) -> Result<Self>
+    pub async fn update<'c, E>(db: E, update: &JobUpdate) -> Result<Self>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        sqlx::query_as(
+        let setters = update.setters().join(",");
+        if setters.is_empty() {
+            return Self::get(db, update.id)
+                .await?
+                .ok_or(Error::from(sqlx::Error::RowNotFound));
+        }
+        let query_str = format!(
             r#"
             update mailchimp set 
-                mame = $2, 
-                api_key = $3,
-                list = $4, 
-                club = $5, 
-                region = $6
+                {setters}
             where id = $1
             returning *;
             "#,
-        )
-        .bind(job.id)
-        .bind(&job.name)
-        .bind(&job.api_key)
-        .bind(&job.list)
-        .bind(job.club)
-        .bind(job.region)
-        .fetch_one(db)
-        .map_err(Error::from)
-        .await
+        );
+        let query = sqlx::query_as(&query_str);
+        update.binds(query).fetch_one(db).map_err(Error::from).await
     }
 
     pub async fn delete<'c, E>(db: E, id: i64) -> Result<()>
@@ -184,13 +252,13 @@ impl Job {
     }
 
     #[tracing::instrument(skip_all, name = "sync", fields(name = self.name, id = self.id))]
-    pub async fn sync(&self, ddb_url: AciDatabaseSettings) -> Result {
+    pub async fn sync(&self, ddb_url: AciDatabaseSettings) -> Result<(usize, usize)> {
         let db = ddb_url.connect().await?;
         let db_members = self.db_members(&db).await?;
         let merge_fields = self.merge_fields()?;
-
+        tracing::info!("starting sync");
         // Fetch addresses for primary members
-        tracing::info!("querying ddb");
+        tracing::debug!("querying ddb");
         let db_addresses =
             ddb::members::mailing_address::for_members(&db, db_members.iter()).await?;
 
@@ -202,18 +270,21 @@ impl Job {
         )
         .await?;
 
+        tracing::debug!("upserting members");
         let client = self.client()?;
         let upserted =
             mailchimp::members::upsert_many(&client, &self.list, futures::stream::iter(mc_members))
                 .await?;
 
+        tracing::debug!("deleting removed members");
         let deleted = mailchimp::members::retain(&client, &self.list, &upserted).await?;
 
+        tracing::debug!("updating tags");
         let tag_updates = ddb::members::mailchimp::to_tag_updates(&db_members);
         mailchimp::members::tags::update_many(&client, &self.list, &tag_updates).await?;
 
-        tracing::info!(deleted, upserted = upserted.len(), "completed");
+        tracing::info!(deleted, upserted = upserted.len(), "sync completed");
 
-        Ok(())
+        Ok((deleted, upserted.len()))
     }
 }

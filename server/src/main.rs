@@ -1,6 +1,11 @@
 use clap::Parser;
+use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use serde_json::json;
-use server::{cron::mailchimp::Job as MailchimpJob, settings::Settings, Result};
+use server::{
+    cron::mailchimp::{Job as MailchimpJob, JobUpdate as MailchimpJobUpdate},
+    settings::Settings,
+    Result,
+};
 use std::{env, process};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -33,54 +38,57 @@ impl Cli {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Cmd {
-    Setup(Setup),
+    Sync(Sync),
 }
 
 impl Cmd {
     async fn run(&self, settings: Settings) -> Result {
         match self {
-            Self::Setup(cmd) => cmd.run(settings).await,
-        }
-    }
-}
-
-#[derive(Debug, clap::Args)]
-pub struct Setup {
-    #[clap(subcommand)]
-    cmd: SetupCmd,
-}
-
-impl Setup {
-    async fn run(&self, settings: Settings) -> Result {
-        self.cmd.run(settings).await
-    }
-}
-
-#[derive(Debug, clap::Subcommand)]
-pub enum SetupCmd {
-    List(SetupList),
-    Add(SetupAdd),
-    Update(SetupUpdate),
-    Delete(SetupDelete),
-    Sync(SetupSync),
-}
-
-impl SetupCmd {
-    async fn run(&self, settings: Settings) -> Result {
-        match self {
-            Self::List(cmd) => cmd.run(settings).await,
-            Self::Add(cmd) => cmd.run(settings).await,
-            Self::Update(cmd) => cmd.run(settings).await,
-            Self::Delete(cmd) => cmd.run(settings).await,
             Self::Sync(cmd) => cmd.run(settings).await,
         }
     }
 }
 
 #[derive(Debug, clap::Args)]
-pub struct SetupList {}
+pub struct Sync {
+    #[clap(subcommand)]
+    cmd: SyncCmd,
+}
 
-impl SetupList {
+impl Sync {
+    async fn run(&self, settings: Settings) -> Result {
+        self.cmd.run(settings).await
+    }
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum SyncCmd {
+    List(SyncList),
+    Create(SyncCreate),
+    Update(SyncUpdate),
+    Delete(SyncDelete),
+    Fields(SyncFields),
+    Run(SyncRun),
+}
+
+impl SyncCmd {
+    async fn run(&self, settings: Settings) -> Result {
+        match self {
+            Self::List(cmd) => cmd.run(settings).await,
+            Self::Create(cmd) => cmd.run(settings).await,
+            Self::Update(cmd) => cmd.run(settings).await,
+            Self::Delete(cmd) => cmd.run(settings).await,
+            Self::Fields(cmd) => cmd.run(settings).await,
+            Self::Run(cmd) => cmd.run(settings).await,
+        }
+    }
+}
+
+/// List the configured sync jobs
+#[derive(Debug, clap::Args)]
+pub struct SyncList {}
+
+impl SyncList {
     async fn run(&self, settings: Settings) -> Result {
         let db = settings.db.connect().await?;
         let jobs = MailchimpJob::all(&db).await?;
@@ -88,8 +96,9 @@ impl SetupList {
     }
 }
 
+/// Create a new sync job
 #[derive(Debug, clap::Args)]
-pub struct SetupAdd {
+pub struct SyncCreate {
     #[arg(long)]
     name: String,
     #[arg(long)]
@@ -102,7 +111,7 @@ pub struct SetupAdd {
     list: String,
 }
 
-impl SetupAdd {
+impl SyncCreate {
     async fn run(&self, settings: Settings) -> Result {
         let to_create = MailchimpJob {
             name: self.name.clone(),
@@ -118,46 +127,56 @@ impl SetupAdd {
     }
 }
 
+/// Update a sync job
 #[derive(Debug, clap::Args)]
-pub struct SetupUpdate {
-    id: i64,
+pub struct SyncUpdate {
+    /// The id of the job to update
+    id: u64,
     #[arg(long)]
-    name: String,
+    name: Option<String>,
     #[arg(long)]
     club: Option<i64>,
     #[arg(long)]
     region: Option<i32>,
     #[arg(long)]
-    api_key: String,
+    api_key: Option<String>,
     #[arg(long)]
-    list: String,
+    list: Option<String>,
 }
 
-impl SetupUpdate {
+impl From<&SyncUpdate> for MailchimpJobUpdate {
+    fn from(value: &SyncUpdate) -> Self {
+        Self {
+            id: value.id as i64,
+            name: value.name.clone(),
+            club: value.club,
+            region: value.region,
+            api_key: value.api_key.clone(),
+            list: value.list.clone(),
+        }
+    }
+}
+
+impl SyncUpdate {
     async fn run(&self, settings: Settings) -> Result {
-        let to_update = MailchimpJob {
-            id: self.id,
-            name: self.name.clone(),
-            club: self.club,
-            list: self.list.clone(),
-            api_key: self.api_key.clone(),
-            region: self.region,
-            ..Default::default()
-        };
+        let update = MailchimpJobUpdate::from(self);
         let db = settings.db.connect().await?;
-        let job = MailchimpJob::update(&db, &to_update).await?;
+        let job = MailchimpJob::update(&db, &update).await?;
         print_json(&job)
     }
 }
 
+/// Delete a sync job
+///
+/// Without the confirm flag this just lists the job that would be deleted
 #[derive(Debug, clap::Args)]
-pub struct SetupDelete {
+pub struct SyncDelete {
     id: i64,
     #[arg(long)]
     confirm: bool,
 }
 
-impl SetupDelete {
+impl SyncDelete {
     async fn run(&self, settings: Settings) -> Result {
         let db = settings.db.connect().await?;
         let job = MailchimpJob::get(&db, self.id)
@@ -174,7 +193,7 @@ impl SetupDelete {
 
 /// Sync the mailing list merge fields to mailchimp
 #[derive(Debug, clap::Args)]
-pub struct SetupSync {
+pub struct SyncFields {
     /// The id of the mailing list to sync
     id: u64,
     /// Delete user added merge fields
@@ -182,7 +201,7 @@ pub struct SetupSync {
     process_deletes: bool,
 }
 
-impl SetupSync {
+impl SyncFields {
     async fn run(&self, settings: Settings) -> Result {
         let db = settings.db.connect().await?;
         let job = MailchimpJob::get(&db, self.id as i64)
@@ -195,6 +214,58 @@ impl SetupSync {
             "updated": updated,
         });
         print_json(&json)
+    }
+}
+
+/// Sync the given club (or all) mailing list from the membership database
+#[derive(Debug, clap::Args)]
+pub struct SyncRun {
+    /// The id of the mailing list to sync
+    id: Option<u64>,
+}
+
+impl SyncRun {
+    async fn run(&self, settings: Settings) -> Result {
+        #[derive(Debug, serde::Serialize)]
+        struct JobResult {
+            name: String,
+            deleted: usize,
+            upserted: usize,
+        }
+        let db = settings.db.connect().await?;
+        let jobs = if let Some(id) = self.id {
+            let job = MailchimpJob::get(&db, id as i64)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("sync job not found"))?;
+            vec![job]
+        } else {
+            MailchimpJob::all(&db).await?
+        };
+        let results: Vec<(i64, JobResult)> = futures::stream::iter(jobs)
+            .map(|job| {
+                let ddb_settings = settings.ddb.clone();
+                async move {
+                    let name = job.name.clone();
+                    job.sync(ddb_settings)
+                        .map_ok(|(deleted, upserted)| {
+                            (
+                                job.id,
+                                JobResult {
+                                    name,
+                                    deleted,
+                                    upserted,
+                                },
+                            )
+                        })
+                        .await
+                }
+            })
+            .buffered(10)
+            .try_collect::<Vec<(i64, JobResult)>>()
+            .await?;
+
+        let map: std::collections::HashMap<i64, JobResult> = results.into_iter().collect();
+        print_json(&map)
     }
 }
 

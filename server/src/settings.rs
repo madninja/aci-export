@@ -26,7 +26,7 @@ impl Settings {
 }
 
 fn default_log() -> String {
-    "info".to_string()
+    "server=info".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]

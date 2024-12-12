@@ -431,6 +431,7 @@ pub mod mailchimp {
             to_update("affiliate", member, |m| {
                 m.member_type == MemberType::Affiliate
             }),
+            to_update("member", member, |m| m.member_type == MemberType::Regular),
             to_update("lifetime", member, |m| {
                 m.member_class == MemberClass::Lifetime
             }),
