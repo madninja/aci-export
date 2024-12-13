@@ -2,6 +2,7 @@ use crate::{settings::AciDatabaseSettings, Error, Result};
 use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
 use sqlx::{query::QueryAs, Database, Encode, Type};
+use std::time::Instant;
 use tokio_cron_scheduler::{Job as CronJob, JobScheduler};
 
 #[derive(Debug, sqlx::FromRow, Clone, serde::Serialize, Default)]
@@ -259,6 +260,7 @@ impl Job {
         tracing::info!("starting sync");
         // Fetch addresses for primary members
         tracing::debug!("querying ddb");
+        let start = Instant::now();
         let db_addresses =
             ddb::members::mailing_address::for_members(&db, db_members.iter()).await?;
 
@@ -283,7 +285,13 @@ impl Job {
         let tag_updates = ddb::members::mailchimp::to_tag_updates(&db_members);
         mailchimp::members::tags::update_many(&client, &self.list, &tag_updates).await?;
 
-        tracing::info!(deleted, upserted = upserted.len(), "sync completed");
+        let duration = start.elapsed().as_secs();
+        tracing::info!(
+            deleted,
+            upserted = upserted.len(),
+            duration,
+            "sync completed"
+        );
 
         Ok((deleted, upserted.len()))
     }
