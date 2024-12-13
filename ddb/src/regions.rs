@@ -1,15 +1,21 @@
-use crate::{Error, Result, Stream};
-use futures::{StreamExt, TryStreamExt};
-use sqlx::{MySql, MySqlPool};
+use crate::{Error, Result};
+use futures::TryFutureExt;
+use sqlx::{MySql, MySqlExecutor};
 
-pub fn all(exec: &MySqlPool) -> Stream<Region> {
+pub async fn all<'c, E>(exec: E) -> Result<Vec<Region>>
+where
+    E: MySqlExecutor<'c>,
+{
     sqlx::query_as::<_, Region>(FETCH_REGIONS_QUERY)
-        .fetch(exec)
+        .fetch_all(exec)
         .map_err(Error::from)
-        .boxed()
+        .await
 }
 
-pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Region>> {
+pub async fn by_uid<'c, E>(exec: E, uid: u64) -> Result<Option<Region>>
+where
+    E: MySqlExecutor<'c>,
+{
     let region = fetch_regions_query()
         .push("where field_region_target_id = ")
         .push_bind(uid)
@@ -20,7 +26,10 @@ pub async fn by_uid(exec: &MySqlPool, uid: u64) -> Result<Option<Region>> {
     Ok(region)
 }
 
-pub async fn by_number(exec: &MySqlPool, number: i32) -> Result<Option<Region>> {
+pub async fn by_number<'c, E>(exec: E, number: i32) -> Result<Option<Region>>
+where
+    E: MySqlExecutor<'c>,
+{
     let region = fetch_regions_query()
         .push("where rn.field_region_number_value = ")
         .push_bind(number)

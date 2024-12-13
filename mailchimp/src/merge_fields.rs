@@ -1,7 +1,8 @@
 use crate::{
     deserialize_null_string, error::Error, paged_query_impl, paged_response_impl,
-    query_default_impl, Client, Result, Stream, NO_QUERY,
+    query_default_impl, read_config, Client, Result, Stream, NO_QUERY,
 };
+use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -45,6 +46,58 @@ pub async fn update(
             &field,
         )
         .await
+}
+
+pub async fn sync(
+    client: &Client,
+    list_id: &str,
+    target: MergeFields,
+    process_deletes: bool,
+) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
+    type TaggedMergeField = (String, MergeField);
+
+    let current: MergeFields = all(client, list_id, Default::default())
+        .try_collect()
+        .await?;
+
+    fn collect_tags(fields: &[TaggedMergeField]) -> Vec<String> {
+        fields
+            .iter()
+            .map(|(_, field)| field.tag.clone())
+            .collect::<Vec<_>>()
+    }
+
+    let (to_delete, _): (Vec<TaggedMergeField>, Vec<TaggedMergeField>) = current
+        .clone()
+        .into_iter()
+        .partition(|(key, _)| !target.contains_key(key));
+
+    let (to_add, target_remaining): (Vec<TaggedMergeField>, Vec<TaggedMergeField>) = target
+        .into_iter()
+        .partition(|(key, _)| !current.contains_key(key));
+
+    let deleted = collect_tags(&to_delete);
+    if process_deletes {
+        for (_, field) in to_delete {
+            delete(client, list_id, &field.merge_id.to_string()).await?;
+        }
+    }
+
+    let added = collect_tags(&to_add);
+    for (_, field) in to_add {
+        create(client, list_id, field).await?;
+    }
+
+    let mut updated = vec![];
+    for (_, mut field) in target_remaining.into_iter() {
+        let current = current.get(&field.tag).unwrap();
+        field.merge_id = current.merge_id;
+        if field != *current {
+            updated.push(field.tag.clone());
+            update(client, list_id, &current.merge_id.to_string(), field).await?;
+        }
+    }
+    Ok((added, deleted, updated))
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -118,6 +171,30 @@ impl std::str::FromStr for MergeType {
 #[derive(Debug, Default, Clone)]
 pub struct MergeFields(HashMap<String, MergeField>);
 
+impl MergeFields {
+    pub fn from_config<S>(source: S) -> Result<Self>
+    where
+        S: config::Source + Send + Sync + 'static,
+    {
+        #[derive(Debug, serde::Deserialize, serde::Serialize)]
+        struct MergeFieldsConfig {
+            merge_fields: Vec<MergeField>,
+        }
+        impl TryFrom<MergeFieldsConfig> for MergeFields {
+            type Error = Error;
+            fn try_from(config: MergeFieldsConfig) -> Result<Self> {
+                for field in config.merge_fields.iter() {
+                    if field.tag.len() > 10 {
+                        return Err(Error::merge_field(format!("tag too long: {}", field.tag)));
+                    }
+                }
+                Ok(config.merge_fields.into_iter().collect())
+            }
+        }
+        read_config::<MergeFieldsConfig, S>(source).and_then(TryInto::try_into)
+    }
+}
+
 impl<'de> Deserialize<'de> for MergeFields {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -135,6 +212,7 @@ impl Serialize for MergeFields {
         self.0.serialize(serializer)
     }
 }
+
 impl std::ops::Deref for MergeFields {
     type Target = HashMap<String, MergeField>;
     fn deref(&self) -> &Self::Target {

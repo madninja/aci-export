@@ -108,6 +108,17 @@ impl AuthMode {
     }
 }
 
+pub fn read_config<'de, T: serde::Deserialize<'de>, S>(source: S) -> Result<T>
+where
+    S: config::Source + Send + Sync + 'static,
+{
+    let config = config::Config::builder()
+        .add_source(source)
+        .build()
+        .and_then(|config| config.try_deserialize())?;
+    Ok(config)
+}
+
 #[derive(Clone, Debug)]
 pub struct Client {
     auth: AuthMode,
@@ -432,7 +443,7 @@ pub mod deserialize_null_i32 {
 
 struct I32Visitor;
 
-impl<'de> serde::de::Visitor<'de> for I32Visitor {
+impl serde::de::Visitor<'_> for I32Visitor {
     type Value = i32;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
