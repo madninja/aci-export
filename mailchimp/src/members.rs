@@ -120,9 +120,11 @@ pub async fn upsert_many(
         .map(Ok::<Vec<_>, Error>)
         .map_ok(|members| (client.clone(), members, upserted.clone(), retries))
         .try_for_each_concurrent(8, |(client, members, processed, retries)| async move {
-            let response = Retry::spawn(retries, || {
-                batch_upsert(&client, list_id, &members).map_err(RetryError::transient)
-            })
+            let response = Retry::spawn_notify(
+                retries,
+                || batch_upsert(&client, list_id, &members).map_err(RetryError::transient),
+                |err, sleep| tracing::warn!(%err, sleep = sleep.as_secs(), "batch member update error"),
+            )
             .await?;
             let mut set = processed.write().await;
             response
@@ -235,9 +237,10 @@ pub mod tags {
                     let operation = batch::update(&mut batch, list_id, member_id, updates)?;
                     operation.operation_id = member_id.to_owned();
                 }
-                Retry::spawn(retries, || {
+                Retry::spawn_notify(retries, || {
                     batch.run(&client, true).map_err(RetryError::transient)
-                })
+                },
+                |err, sleep| tracing::warn!(%err, sleep = sleep.as_secs(), "batch tag update error"))
                 .await?;
                 Ok(())
             })
