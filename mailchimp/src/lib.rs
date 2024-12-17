@@ -7,6 +7,7 @@ use reqwest::{
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fmt::Debug, pin::Pin, str::FromStr, time::Duration};
+use tokio_retry2::strategy::jitter;
 
 /// A type alias for `Future` that may return `crate::error::Error`
 pub type Future<T> = Pin<Box<dyn StdFuture<Output = Result<T>> + Send>>;
@@ -314,6 +315,41 @@ impl Client {
                 .boxed(),
             Err(e) => future::err(e).boxed(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub enum RetryPolicy {
+    #[default]
+    None,
+    Retries(usize),
+}
+
+impl RetryPolicy {
+    pub fn none() -> Self {
+        Self::None
+    }
+
+    pub fn with_retries(retries: usize) -> Self {
+        Self::Retries(retries)
+    }
+}
+
+impl IntoIterator for RetryPolicy {
+    type Item = Duration;
+    type IntoIter = std::vec::IntoIter<Duration>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        use tokio_retry2::strategy::ExponentialFactorBackoff;
+        let retries = match self {
+            Self::None => vec![],
+            Self::Retries(retries) => ExponentialFactorBackoff::from_factor(2.)
+                .max_delay_millis(5000)
+                .map(jitter)
+                .take(retries)
+                .collect(),
+        };
+        retries.into_iter()
     }
 }
 

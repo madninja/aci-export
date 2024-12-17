@@ -1,14 +1,18 @@
 use crate::{
     batches, deserialize_null_string, paged_query_impl, paged_response_impl, query_default_impl,
-    Client, Error, Result, Stream, NO_QUERY,
+    Client, Error, Result, RetryPolicy, Stream, NO_QUERY,
 };
-use futures::stream::{Stream as StdStream, StreamExt, TryStreamExt};
+use futures::{
+    stream::{Stream as StdStream, StreamExt, TryStreamExt},
+    TryFutureExt,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
 use tokio::sync::RwLock;
+use tokio_retry2::{Retry, RetryError};
 
 pub fn all(client: &Client, list_id: &str, query: MembersQuery) -> Stream<Member> {
     client.fetch_stream::<MembersQuery, MembersResponse>(
@@ -49,7 +53,6 @@ pub async fn retain(client: &Client, list_id: &str, keep_keys: &HashSet<String>)
         .into_iter()
         .collect();
 
-    // don't process deletes for a single member sync
     let to_delete = &audience - keep_keys;
     // Delete all to_delete entries
     futures::stream::iter(to_delete.iter())
@@ -108,15 +111,19 @@ pub async fn upsert_many(
     client: &Client,
     list_id: &str,
     members: impl StdStream<Item = Member>,
+    retries: RetryPolicy,
 ) -> Result<HashSet<String>> {
     let upserted = Arc::new(RwLock::new(HashSet::new()));
     // chunk in max sizes and yse batch_upsert to upsert the members in the list
     members
         .chunks(MEMBER_BATCH_UPSERT_MAX)
         .map(Ok::<Vec<_>, Error>)
-        .map_ok(|members| (client.clone(), members, upserted.clone()))
-        .try_for_each_concurrent(8, |(client, members, processed)| async move {
-            let response = batch_upsert(&client, list_id, &members).await?;
+        .map_ok(|members| (client.clone(), members, upserted.clone(), retries))
+        .try_for_each_concurrent(8, |(client, members, processed, retries)| async move {
+            let response = Retry::spawn(retries, || {
+                batch_upsert(&client, list_id, &members).map_err(RetryError::transient)
+            })
+            .await?;
             let mut set = processed.write().await;
             response
                 .updated_members
@@ -216,18 +223,22 @@ pub mod tags {
         client: &Client,
         list_id: &str,
         tag_updates: &[(String, Vec<MemberTagUpdate>)],
+        retries: RetryPolicy,
     ) -> Result {
         futures::stream::iter(tag_updates)
             .chunks(300)
             .map(Ok::<Vec<_>, Error>)
-            .map_ok(|updates| (client.clone(), updates))
-            .try_for_each_concurrent(10, |(client, updates)| async move {
+            .map_ok(|updates| (client.clone(), updates, retries))
+            .try_for_each_concurrent(10, |(client, updates, retries)| async move {
                 let mut batch = batches::Batch::default();
                 for (member_id, updates) in updates {
                     let operation = batch::update(&mut batch, list_id, member_id, updates)?;
                     operation.operation_id = member_id.to_owned();
                 }
-                batch.run(&client, true).await?;
+                Retry::spawn(retries, || {
+                    batch.run(&client, true).map_err(RetryError::transient)
+                })
+                .await?;
                 Ok(())
             })
             .await

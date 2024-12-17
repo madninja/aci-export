@@ -1,6 +1,7 @@
 use crate::{settings::AciDatabaseSettings, Error, Result};
 use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
+use mailchimp::RetryPolicy;
 use sqlx::{query::QueryAs, Database, Encode, Type};
 use std::time::Instant;
 use tokio_cron_scheduler::{Job as CronJob, JobScheduler};
@@ -274,16 +275,26 @@ impl Job {
 
         tracing::debug!("upserting members");
         let client = self.client()?;
-        let upserted =
-            mailchimp::members::upsert_many(&client, &self.list, futures::stream::iter(mc_members))
-                .await?;
+        let upserted = mailchimp::members::upsert_many(
+            &client,
+            &self.list,
+            futures::stream::iter(mc_members),
+            RetryPolicy::Retries(3),
+        )
+        .await?;
 
         tracing::debug!("deleting removed members");
         let deleted = mailchimp::members::retain(&client, &self.list, &upserted).await?;
 
         tracing::debug!("updating tags");
         let tag_updates = ddb::members::mailchimp::to_tag_updates(&db_members);
-        mailchimp::members::tags::update_many(&client, &self.list, &tag_updates).await?;
+        mailchimp::members::tags::update_many(
+            &client,
+            &self.list,
+            &tag_updates,
+            RetryPolicy::with_retries(3),
+        )
+        .await?;
 
         let duration = start.elapsed().as_secs();
         tracing::info!(

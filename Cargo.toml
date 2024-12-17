@@ -12,6 +12,7 @@ chrono = { version = "*", features = ["serde"] }
 sqlx = { version = "0", features = ["runtime-tokio-rustls", "mysql", "chrono", "postgres"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+tokio-retry2 = "0"
 config = { version = "0", default-features = false, features = ["toml"] }
 tracing = "0.1"
 itertools = "0"

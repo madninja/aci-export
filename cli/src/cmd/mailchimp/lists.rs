@@ -1,5 +1,6 @@
 use crate::{cmd::print_json, settings::Settings, Result};
 use futures::TryStreamExt;
+use mailchimp::RetryPolicy;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -193,9 +194,13 @@ impl Sync {
         )
         .await?;
 
-        let upserted =
-            mailchimp::members::upsert_many(&client, list, futures::stream::iter(mc_members))
-                .await?;
+        let upserted = mailchimp::members::upsert_many(
+            &client,
+            list,
+            futures::stream::iter(mc_members),
+            RetryPolicy::with_retries(3),
+        )
+        .await?;
 
         let deleted = if self.member.is_none() {
             mailchimp::members::retain(&client, list, &upserted).await?
@@ -204,7 +209,13 @@ impl Sync {
         };
 
         let tag_updates = ddb::members::mailchimp::to_tag_updates(&db_members);
-        mailchimp::members::tags::update_many(&client, list, &tag_updates).await?;
+        mailchimp::members::tags::update_many(
+            &client,
+            list,
+            &tag_updates,
+            RetryPolicy::with_retries(3),
+        )
+        .await?;
 
         let json = json!({
                 "upserted": upserted.len(),
