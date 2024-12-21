@@ -161,8 +161,8 @@ impl Job {
     {
         sqlx::query_as(
             r#"
-            insert into mailchimp (mame, api_key, list, club, region)
-            values ($1, $2, $4, $4, $5)
+            insert into mailchimp (name, api_key, list, club, region)
+            values ($1, $2, $3, $4, $5)
             returning *;
             "#,
         )
