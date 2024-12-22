@@ -123,7 +123,7 @@ pub async fn upsert_many(
             let response = Retry::spawn_notify(
                 retries,
                 || batch_upsert(&client, list_id, &members).map_err(RetryError::transient),
-                |err, sleep| tracing::warn!(%err, sleep = sleep.as_secs(), "batch member update error"),
+                |err, sleep| tracing::warn!(%err, sleep = sleep.as_secs(), "batch member update"),
             )
             .await?;
             let mut set = processed.write().await;
@@ -136,11 +136,7 @@ pub async fn upsert_many(
                 });
             if response.error_count > 0 {
                 response.errors.iter().for_each(|err| {
-                    tracing::warn!(
-                        email = err.email_address,
-                        err = err.error,
-                        "mailchimp error"
-                    );
+                    tracing::warn!(email = err.email_address, err = err.error, "mailchimp");
                 })
             }
             Ok(())
@@ -237,10 +233,11 @@ pub mod tags {
                     let operation = batch::update(&mut batch, list_id, member_id, updates)?;
                     operation.operation_id = member_id.to_owned();
                 }
-                Retry::spawn_notify(retries, || {
-                    batch.run(&client, true).map_err(RetryError::transient)
-                },
-                |err, sleep| tracing::warn!(%err, sleep = sleep.as_secs(), "batch tag update error"))
+                Retry::spawn_notify(
+                    retries,
+                    || batch.run(&client, true).map_err(RetryError::transient),
+                    |err, sleep| tracing::warn!(%err, sleep = sleep.as_secs(), "batch tag update"),
+                )
                 .await?;
                 Ok(())
             })

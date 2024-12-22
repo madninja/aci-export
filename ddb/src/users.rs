@@ -23,7 +23,7 @@ fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
                 users_field_data.mail as email,
                 user__field_first_name.field_first_name_value AS first_name,
                 user__field_last_name.field_last_name_value AS last_name,
-                CAST(user__field_birth_date.field_birth_date_value AS DATE) AS birthday
+                CAST(user__field_birth_date.field_birth_date_value AS DATE) AS birthday,
                 DATE(FROM_UNIXTIME(users_field_data.login)) AS last_login
             FROM
                 users_field_data

@@ -26,7 +26,7 @@ impl Settings {
 }
 
 fn default_log() -> String {
-    "server=info".to_string()
+    "server=info,mailchimp=info".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
