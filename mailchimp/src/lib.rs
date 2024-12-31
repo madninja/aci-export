@@ -31,7 +31,7 @@ pub const DEFAULT_TIMEOUT: u64 = 20;
 /// functions
 pub const NO_QUERY: &[&str; 0] = &[""; 0];
 /// Default number of items to return in a query
-pub const DEFAULT_QUERY_COUNT: u32 = 1000;
+pub const DEFAULT_QUERY_COUNT: usize = 1000;
 
 #[derive(Debug, Clone)]
 pub struct BasicAuth {
@@ -202,6 +202,15 @@ impl Client {
         }
     }
 
+    // pub async fn fetch_all<Q, R>(&self, path: &str, mut query: Q) -> Result<Vec<R::Item>>
+    // where
+    //     R: PagedResponse + 'static,
+    //     Q: PagedQuery + 'static + Serialize,
+    // {
+    //     let client = self.clone();
+    //     let path = path.to_string();
+    // }
+
     pub fn fetch_stream<Q, R>(&self, path: &str, mut query: Q) -> Stream<R::Item>
     where
         R: PagedResponse + 'static,
@@ -213,7 +222,7 @@ impl Client {
         self.fetch::<R, _>(&path, &query)
             .map_ok(move |data| {
                 // let mut query = query.clone();
-                query.inc_offset(data.len() as u32);
+                query.inc_offset(data.len());
                 stream::try_unfold(
                     (data, client, path, query),
                     |(mut data, client, path, mut query)| async move {
@@ -222,8 +231,9 @@ impl Client {
                             None => {
                                 let mut data = client.fetch::<R, _>(&path, &query).await?;
                                 let data_len = data.len();
+                                tracing::info!(data_len, "data");
                                 if data_len > 0 {
-                                    query.inc_offset(data_len as u32);
+                                    query.inc_offset(data_len);
                                     let entry = data.pop().unwrap();
                                     Ok(Some((entry, (data, client, path, query))))
                                 } else {
@@ -361,12 +371,12 @@ pub trait PagedQuery: Clone + Send + Serialize + Sync {
         self.set_fields(format!("{},{}", self.fields(), fields.join(",")));
     }
 
-    fn set_count(&mut self, count: u32);
+    fn set_count(&mut self, count: usize);
 
-    fn offset(&self) -> u32;
-    fn set_offset(&mut self, offset: u32);
+    fn offset(&self) -> usize;
+    fn set_offset(&mut self, offset: usize);
 
-    fn inc_offset(&mut self, inc: u32) {
+    fn inc_offset(&mut self, inc: usize) {
         self.set_offset(self.offset() + inc)
     }
 }
@@ -396,15 +406,15 @@ macro_rules! paged_query_impl {
                 self.fields = fields;
             }
 
-            fn set_count(&mut self, count: u32) {
+            fn set_count(&mut self, count: usize) {
                 self.count = count;
             }
 
-            fn offset(&self) -> u32 {
+            fn offset(&self) -> usize {
                 self.offset
             }
 
-            fn set_offset(&mut self, offset: u32) {
+            fn set_offset(&mut self, offset: usize) {
                 self.offset = offset;
             }
         }

@@ -1,5 +1,4 @@
 use crate::{cmd::print_json, settings::Settings, Result};
-use futures::TryStreamExt;
 
 /// Commands on the members of an audience list.
 #[derive(Debug, clap::Args)]
@@ -52,9 +51,7 @@ impl List {
             let member = mailchimp::members::for_email(&client, list, email).await?;
             print_json(&member)
         } else {
-            let lists = mailchimp::members::all(&client, list, Default::default())
-                .try_collect::<Vec<_>>()
-                .await?;
+            let lists = mailchimp::members::all_collect(&client, list, Default::default()).await?;
             print_json(&lists)
         }
     }

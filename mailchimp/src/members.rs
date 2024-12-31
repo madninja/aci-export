@@ -1,9 +1,9 @@
 use crate::{
-    batches, deserialize_null_string, paged_query_impl, paged_response_impl, query_default_impl,
-    Client, Error, Result, RetryPolicy, Stream, NO_QUERY,
+    batches, deserialize_null_string, lists, paged_query_impl, paged_response_impl,
+    query_default_impl, Client, Error, Result, RetryPolicy, Stream, DEFAULT_QUERY_COUNT, NO_QUERY,
 };
 use futures::{
-    stream::{Stream as StdStream, StreamExt, TryStreamExt},
+    stream::{self, Stream as StdStream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,32 @@ pub fn all(client: &Client, list_id: &str, query: MembersQuery) -> Stream<Member
         &format!("/3.0/lists/{list_id}/members"),
         query,
     )
+}
+
+pub async fn all_collect(
+    client: &Client,
+    list_id: &str,
+    query: MembersQuery,
+) -> Result<Vec<Member>> {
+    let list_info = lists::get(client, list_id).await?;
+    let total = list_info
+        .stats
+        .and_then(|stats| stats.total_contacts)
+        .unwrap();
+    stream::iter(0..total)
+        .chunks(DEFAULT_QUERY_COUNT)
+        .map(|chunk| {
+            let mut page = query.clone();
+            page.offset = chunk[0] as usize;
+            page.count = chunk.len();
+            client
+                .fetch::<MembersResponse, _>(&format!("/3.0/lists/{list_id}/members"), &page)
+                .map_ok(|response| response.members)
+        })
+        .buffered(10)
+        .try_collect::<Vec<Vec<_>>>()
+        .map_ok(|coll| coll.into_iter().flatten().collect())
+        .await
 }
 
 pub async fn get(client: &Client, list_id: &str, member_id: &str) -> Result<Member> {
@@ -42,18 +68,21 @@ pub async fn delete(client: &Client, list_id: &str, member_id: &str) -> Result<(
 pub async fn retain(client: &Client, list_id: &str, keep_keys: &HashSet<String>) -> Result<usize> {
     // Iterate through all mailchimp audience member. Collect all members that are not
     // the upserted set by set subtraction
-    let mailchimp_stream = all(client, list_id, Default::default());
-    let audience: HashSet<String> = mailchimp_stream
-        .map_err(Error::from)
-        .try_filter_map(|member| async move {
-            Ok((member.status != Some(MemberStatus::Cleaned)).then_some(member.id))
-        })
-        .try_collect::<Vec<_>>()
-        .await?
+    let audience = all_collect(
+        client,
+        list_id,
+        MembersQuery {
+            fields: "members.id".to_string(),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let audience_ids: HashSet<String> = audience
         .into_iter()
+        .filter_map(|member| (member.status != Some(MemberStatus::Cleaned)).then_some(member.id))
         .collect();
 
-    let to_delete = &audience - keep_keys;
+    let to_delete = &audience_ids - keep_keys;
     // Delete all to_delete entries
     futures::stream::iter(to_delete.iter())
         .map(|member_id| Ok::<_, crate::Error>((client.clone(), member_id)))
@@ -224,7 +253,7 @@ pub mod tags {
         retries: RetryPolicy,
     ) -> Result {
         futures::stream::iter(tag_updates)
-            .chunks(300)
+            .chunks(2000)
             .map(Ok::<Vec<_>, Error>)
             .map_ok(|updates| (client.clone(), updates, retries))
             .try_for_each_concurrent(10, |(client, updates, retries)| async move {
@@ -326,8 +355,8 @@ pub enum MemberTagStatus {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MembersQuery {
     pub fields: String,
-    pub count: u32,
-    pub offset: u32,
+    pub count: usize,
+    pub offset: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

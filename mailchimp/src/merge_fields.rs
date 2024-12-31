@@ -355,8 +355,8 @@ where
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MergeFieldsQuery {
     pub fields: String,
-    pub count: u32,
-    pub offset: u32,
+    pub count: usize,
+    pub offset: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

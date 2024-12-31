@@ -1,6 +1,6 @@
 use crate::{
     deserialize_null_string, paged_query_impl, paged_response_impl, query_default_impl,
-    read_config, Client, Result, Stream, NO_QUERY,
+    read_config, Client, Result, Stream,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,10 @@ pub fn all(client: &Client, query: ListsQuery) -> Stream<List> {
 
 pub async fn get(client: &Client, list_id: &str) -> Result<List> {
     client
-        .fetch(&format!("/3.0/lists/{list_id}"), NO_QUERY)
+        .fetch(
+            &format!("/3.0/lists/{list_id}"),
+            &[("include_total_contacts", true)],
+        )
         .await
 }
 
@@ -75,6 +78,38 @@ pub struct List {
     pub has_welcome: bool,
     #[serde(default)]
     pub marketing_permissions: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stats: Option<ListStats>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ListStats {
+    pub member_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_contacts: Option<u64>,
+    pub unsubscribe_count: u64,
+    pub cleaned_count: u64,
+    pub member_count_since_send: u64,
+    pub unsubscribe_count_since_send: u64,
+    pub cleaned_count_since_send: u64,
+    pub campaign_count: u64,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub campaign_last_sent: String,
+    pub merge_field_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_sub_rate: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_unsub_rate: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_sub_rate: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_rate: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub click_rate: Option<f64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub last_sub_date: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub last_unsub_date: String,
 }
 
 impl List {
@@ -89,8 +124,8 @@ impl List {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ListsQuery {
     pub fields: String,
-    pub count: u32,
-    pub offset: u32,
+    pub count: usize,
+    pub offset: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

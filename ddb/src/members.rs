@@ -498,7 +498,7 @@ pub mod mailchimp {
             merge_fields.to_value("EXPIRE", member.expiration_date),
         ]
         .into_iter()
-        .filter_map(|value| value.map_err(mc::Error::from).transpose())
+        .filter_map(|value| value.transpose())
         .chain(address_to_values(address, merge_fields).into_iter())
         .chain(club_to_values(&member.local_club, merge_fields).into_iter())
         .collect::<mc::Result<Vec<mc::merge_fields::MergeFieldValue>>>()?;
@@ -525,7 +525,7 @@ pub mod mailchimp {
             merge_fields.to_value("COUNTRY", address.country.as_ref()),
         ]
         .into_iter()
-        .filter_map(|value| value.map_err(mc::Error::from).transpose())
+        .filter_map(|value| value.transpose())
         .collect()
     }
 
@@ -539,7 +539,7 @@ pub mod mailchimp {
             merge_fields.to_value("REGION", club.region as u64),
         ]
         .into_iter()
-        .filter_map(|value| value.map_err(mc::Error::from).transpose())
+        .filter_map(|value| value.transpose())
         .collect()
     }
 }
