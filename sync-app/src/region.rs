@@ -50,8 +50,8 @@ where
     }
     let result = sqlx::QueryBuilder::new("INSERT INTO regions(uid, number, name) ")
         .push_values(regions, |mut b, region| {
-            b.push_bind(&region.uid)
-                .push_bind(&region.number)
+            b.push_bind(region.uid)
+                .push_bind(region.number)
                 .push_bind(&region.name);
         })
         .push(

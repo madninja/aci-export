@@ -124,7 +124,7 @@ pub async fn run(settings: Settings) -> Result<SyncStatsMap> {
     let ddb_users = ddb_members
         .iter()
         .flat_map(|ddb_member| [Some(ddb_member.primary.clone()), ddb_member.partner.clone()])
-        .filter_map(|v| v)
+        .flatten()
         .collect_vec();
     let users = sync_users(&db, ddb_users).await?;
     let members = sync_members(&db, ddb_members).await?;

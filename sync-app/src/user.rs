@@ -103,11 +103,11 @@ where
             )
             .push_values(chunk, |mut b, user| {
                 b.push_bind(&user.email)
-                    .push_bind(&user.uid)
+                    .push_bind(user.uid)
                     .push_bind(&user.first_name)
                     .push_bind(&user.last_name)
-                    .push_bind(&user.birthday)
-                    .push_bind(&user.last_login);
+                    .push_bind(user.birthday)
+                    .push_bind(user.last_login);
             })
             .push(
                 r#"ON CONFLICT(email) DO UPDATE SET

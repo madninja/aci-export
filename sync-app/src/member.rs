@@ -159,9 +159,9 @@ where
                     .push_bind(member.partner.as_ref().map(|user| &user.email))
                     .push_bind(&member.member_class)
                     .push_bind(&member.member_type)
-                    .push_bind(&member.expiration_date)
-                    .push_bind(&member.join_date)
-                    .push_bind(&member.local_club.number);
+                    .push_bind(member.expiration_date)
+                    .push_bind(member.join_date)
+                    .push_bind(member.local_club.number);
             })
             .push(
                 r#"ON CONFLICT(primary_user) DO UPDATE SET
@@ -440,8 +440,8 @@ impl From<ddb::members::Member> for Member {
             member_status: value.member_status.into(),
             primary: value.primary.into(),
             partner: value.partner.map(Into::into),
-            expiration_date: value.expiration_date.into(),
-            join_date: value.join_date.into(),
+            expiration_date: value.expiration_date,
+            join_date: value.join_date,
             local_club: value.local_club.into(),
         }
     }

@@ -83,10 +83,10 @@ where
     }
     let result = sqlx::QueryBuilder::new("INSERT INTO clubs(uid, number, name, region) ")
         .push_values(clubs, |mut b, club| {
-            b.push_bind(&club.uid)
-                .push_bind(&club.number)
+            b.push_bind(club.uid)
+                .push_bind(club.number)
                 .push_bind(&club.name)
-                .push_bind(&club.region);
+                .push_bind(club.region);
         })
         .push(
             r#"ON CONFLICT(number) DO UPDATE SET
