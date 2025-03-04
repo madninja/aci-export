@@ -1,0 +1,28 @@
+[package]
+name = "sync-mailchimp"
+version = "0.1.2"
+edition = "2021"
+
+[[bin]]
+name = "sync-mailchimp"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+config = { version = "0", default-features = false, features = ["toml"] }
+tokio-cron-scheduler = "0.13"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+mailchimp-api = "0" 
+tokio-graceful-shutdown = "0"
+ddb = { package = "aci-ddb", path = "../ddb" }
+mailchimp = { package = "mailchimp", path = "../mailchimp" }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+itertools = { workspace = true }

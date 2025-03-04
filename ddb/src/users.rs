@@ -1,7 +1,7 @@
 use crate::Result;
 use sqlx::{mysql::MySql, MySqlExecutor};
 
-#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+#[derive(Debug, sqlx::FromRow, serde::Serialize, Clone)]
 pub struct User {
     pub uid: u64,
     pub email: String,

@@ -1,12 +1,13 @@
 use clap::Parser;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use serde_json::json;
-use server::{
+use std::{env, process};
+use sync_mailchimp::{
     cron::mailchimp::{Job as MailchimpJob, JobUpdate as MailchimpJobUpdate},
+    server,
     settings::Settings,
     Result,
 };
-use std::{env, process};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Parser)]
@@ -29,7 +30,7 @@ impl Cli {
         if let Some(cmd) = self.cmd.as_ref() {
             cmd.run(settings).await?;
         } else {
-            server::server::run(settings).await?;
+            server::run(settings).await?;
         }
 
         Ok(())

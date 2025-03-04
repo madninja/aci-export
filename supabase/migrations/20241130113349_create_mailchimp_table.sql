@@ -11,7 +11,5 @@ create table mailchimp  (
 
 alter table mailchimp enable row level security;
 
-create policy "mailchimp config is visible only to authenticated users"
-on mailchimp for select
-to authenticated
-using ( true );
+create policy "mailchimp is visible only to authenticated users"
+on mailchimp for select to authenticated using ( true );

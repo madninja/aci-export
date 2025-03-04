@@ -17,7 +17,7 @@ impl Settings {
         Ok(Config::builder()
             // Source settings file
             .add_source(File::with_name(path.to_str().expect("file name")).required(false))
-            .add_source(Environment::with_prefix("ACI").separator("__"))
+            .add_source(Environment::with_prefix("APP").separator("__"))
             .add_source(Environment::with_prefix(env_prefix).separator("__"))
             .build()
             .and_then(|config| config.try_deserialize())?)
