@@ -4,6 +4,7 @@ use sqlx::{postgres::PgExecutor, Postgres};
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 pub struct User {
+    pub id: String,
     pub uid: i64,
     pub email: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -23,6 +24,7 @@ pub struct User {
 impl From<ddb::users::User> for User {
     fn from(value: ddb::users::User) -> Self {
         Self {
+            id: id_for_email(&value.email),
             uid: value.uid as i64,
             email: value.email,
             first_name: value.first_name,
@@ -37,6 +39,7 @@ impl From<ddb::users::User> for User {
 
 pub const FETCH_USER_QUERY: &str = r#"
     SELECT
+        id,
         uid,
         email,
         first_name,
@@ -51,6 +54,12 @@ pub const FETCH_USER_QUERY: &str = r#"
 
 fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, Postgres> {
     sqlx::QueryBuilder::new(FETCH_USER_QUERY)
+}
+
+pub fn id_for_email(email: &str) -> String {
+    use base64::prelude::*;
+    use sha2::{Digest, Sha256};
+    BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(email.trim().to_lowercase()))
 }
 
 pub async fn by_uid<'c, E>(exec: E, uid: i64) -> Result<Option<User>>
@@ -72,8 +81,8 @@ where
     E: PgExecutor<'c>,
 {
     let user = fetch_user_query()
-        .push("WHERE email = ")
-        .push_bind(email)
+        .push("WHERE id = ")
+        .push_bind(id_for_email(email))
         .build_query_as::<User>()
         .fetch_optional(exec)
         .await?;
@@ -93,16 +102,18 @@ where
         .and_then(|chunk| async move {
             let result = sqlx::QueryBuilder::new(
                 r#"INSERT INTO users (
-            email,
-            uid,
-            first_name,
-            last_name,
-            birthday,
-            last_login
-        ) "#,
+                    id,
+                    email,
+                    uid,
+                    first_name,
+                    last_name,
+                    birthday,
+                    last_login
+                ) "#,
             )
             .push_values(chunk, |mut b, user| {
-                b.push_bind(&user.email)
+                b.push_bind(&user.id)
+                    .push_bind(&user.email)
                     .push_bind(user.uid)
                     .push_bind(&user.first_name)
                     .push_bind(&user.last_name)
@@ -110,7 +121,8 @@ where
                     .push_bind(user.last_login);
             })
             .push(
-                r#"ON CONFLICT(email) DO UPDATE SET
+                r#"ON CONFLICT(id) DO UPDATE SET
+                email = excluded.email,
                 uid = excluded.uid,
                 first_name = excluded.first_name,
                 last_name = excluded.last_name,
@@ -135,10 +147,10 @@ where
     if users.is_empty() {
         return Ok(0);
     }
-    let mut builder = sqlx::QueryBuilder::new(r#" DELETE FROM users WHERE email NOT IN ("#);
+    let mut builder = sqlx::QueryBuilder::new(r#" DELETE FROM users WHERE id NOT IN ("#);
     let mut seperated = builder.separated(", ");
     for user in users {
-        seperated.push_bind(&user.email);
+        seperated.push_bind(&user.id);
     }
     seperated.push_unseparated(") ");
     let result = builder.build().execute(exec).await?;

@@ -13,6 +13,8 @@ config = { version = "0", default-features = false, features = ["toml"] }
 tokio-cron-scheduler = "0.13"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio-graceful-shutdown = "0"
+sha2 = "0.10"
+base64 = "0.22"
 ddb = { package = "aci-ddb", path = "../ddb" }
 tracing = { workspace = true }
 anyhow = { workspace = true }

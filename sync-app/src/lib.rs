@@ -6,6 +6,8 @@ pub mod cron;
 pub mod server;
 pub mod settings;
 
+pub mod address;
+pub mod brn;
 pub mod club;
 pub mod member;
 pub mod region;

@@ -113,6 +113,7 @@ const FETCH_MEMBERS_QUERY: &str = r#"
     	node_field_data_paragraph__field_club.title AS club_name,
         node_field__data_paragraph_field_club__field_region_number.field_region_number_value as club_region,
         node_field_data_node__field_region.nid AS club_region_uid,
+        brns.brns_values AS brns,
 
         CAST(alldata.membership_expire AS DATE) as expiration_date,
         CAST(alldata.membership_join_year AS DATE) as join_date
@@ -383,6 +384,9 @@ pub struct Member {
     pub join_date: Option<chrono::NaiveDate>,
     #[sqlx(flatten, try_from = "LocalClub")]
     pub local_club: Club,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[sqlx(flatten, try_from = "Brns")]
+    pub brns: Vec<String>,
 }
 
 pub mod mailchimp {
@@ -548,7 +552,8 @@ pub mod mailchimp {
 pub struct Address {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<u64>,
-    pub street_address: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub street_address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub street_address_2: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -605,5 +610,20 @@ impl From<LocalClub> for Club {
             name: value.club_name.unwrap_or_default(),
             region: value.club_region.unwrap_or_default(),
         }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+struct Brns {
+    brns: String,
+}
+
+impl From<Brns> for Vec<String> {
+    fn from(value: Brns) -> Self {
+        value
+            .brns
+            .split(",")
+            .map(|v| v.trim().to_string())
+            .collect()
     }
 }

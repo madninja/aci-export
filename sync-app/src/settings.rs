@@ -7,6 +7,7 @@ use sqlx::{MySqlPool, PgPool};
 pub struct Settings {
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
     pub db: DatabaseSettings,
     pub ddb: AciDatabaseSettings,
 }

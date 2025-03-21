@@ -1,9 +1,9 @@
-use crate::{club, member, region, settings::Settings, user, Error, Result};
+use crate::{address, brn, club, member, region, settings::Settings, user, Error, Result};
 use futures::TryFutureExt;
 use itertools::Itertools;
 use serde::Serialize;
 use sqlx::PgExecutor;
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 pub async fn schedule(settings: Settings, scheduler: &mut JobScheduler) -> Result {
@@ -105,12 +105,55 @@ where
     ))
 }
 
+pub async fn sync_addresses<'c, DB>(
+    db: DB,
+    ddb_members: &[ddb::members::Member],
+    ddb_addresses: &mut HashMap<u64, ddb::members::Address>,
+) -> Result<(String, SyncStats)>
+where
+    DB: PgExecutor<'c> + Copy,
+{
+    let start = Instant::now();
+    let db_addresses = ddb_members
+        .iter()
+        .filter_map(|ddb_member| {
+            ddb_addresses
+                .remove(&ddb_member.primary.uid)
+                .map(|ddb_address| address::Address::from_member(ddb_member, ddb_address))
+        })
+        .collect_vec();
+    let upserted = address::upsert_many(db, &db_addresses).await?;
+    let deleted = address::retain(db, &db_addresses).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(deleted, upserted, duration, "regions completed");
+    Ok((
+        "addresses".to_string(),
+        SyncStats::new(upserted, deleted, duration),
+    ))
+}
+
+pub async fn sync_brns<'c, DB>(db: DB, brns: &[brn::Brn]) -> Result<(String, SyncStats)>
+where
+    DB: PgExecutor<'c> + Copy,
+{
+    let start = Instant::now();
+    let upserted = brn::upsert_many(db, brns).await?;
+    let deleted = brn::retain(db, brns).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(deleted, upserted, duration, "regions completed");
+    Ok((
+        "addresses".to_string(),
+        SyncStats::new(upserted, deleted, duration),
+    ))
+}
+
 #[tracing::instrument(skip_all, name = "sync")]
 pub async fn run(settings: Settings) -> Result<SyncStatsMap> {
     let ddb = settings.ddb.connect().await?;
     let db = settings.db.connect().await?;
 
     tracing::info!("starting sync");
+    let start = Instant::now();
     let regions = ddb::regions::all(&ddb)
         .map_err(Error::from)
         .and_then(|ddb_regions| sync_regions(&db, ddb_regions))
@@ -126,10 +169,20 @@ pub async fn run(settings: Settings) -> Result<SyncStatsMap> {
         .flat_map(|ddb_member| [Some(ddb_member.primary.clone()), ddb_member.partner.clone()])
         .flatten()
         .collect_vec();
+    let db_brns = ddb_members
+        .iter()
+        .flat_map(brn::Brn::from_member)
+        .collect_vec();
+    let mut ddb_addresses = ddb::members::mailing_address::for_members(&ddb, &ddb_members).await?;
     let users = sync_users(&db, ddb_users).await?;
+    let addresses = sync_addresses(&db, &ddb_members, &mut ddb_addresses).await?;
     let members = sync_members(&db, ddb_members).await?;
-    tracing::info!("sync complete");
+    let brns = sync_brns(&db, &db_brns).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(duration, "sync complete");
 
-    let stats: SyncStatsMap = [regions, clubs, users, members].into_iter().collect();
+    let stats: SyncStatsMap = [brns, addresses, regions, clubs, users, members]
+        .into_iter()
+        .collect();
     Ok(stats)
 }

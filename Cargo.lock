@@ -2552,6 +2552,7 @@ version = "0.1.2"
 dependencies = [
  "aci-ddb",
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "config",
@@ -2559,6 +2560,7 @@ dependencies = [
  "itertools",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tokio",
  "tokio-cron-scheduler",

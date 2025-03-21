@@ -1,4 +1,8 @@
-use crate::{club, user, Error, Result};
+use crate::{
+    club,
+    user::{self, id_for_email},
+    Error, Result,
+};
 use futures::{stream, StreamExt, TryStreamExt};
 use sqlx::{postgres::PgExecutor, Postgres, QueryBuilder};
 use std::{collections::HashMap, fmt};
@@ -121,8 +125,8 @@ const FETCH_MEMBERS_QUERY: &str = r#"
 
     FROM
         members member
-        LEFT JOIN users user ON user.email= member.primary_user
-        LEFT JOIN users partner ON user.email = member.partner_user
+        LEFT JOIN users user ON user.id = member.primary_user
+        LEFT JOIN users partner ON user.id= member.partner_user
         LEFT JOIN clubs club ON club.number = member.local_club
         LEFT JOIN regions region ON region.number = club.region
 "#;
@@ -155,8 +159,8 @@ where
                 ) "#,
             )
             .push_values(&chunk, |mut b, member| {
-                b.push_bind(&member.primary.email)
-                    .push_bind(member.partner.as_ref().map(|user| &user.email))
+                b.push_bind(&member.primary.id)
+                    .push_bind(member.partner.as_ref().map(|user| &user.id))
                     .push_bind(&member.member_class)
                     .push_bind(&member.member_type)
                     .push_bind(member.expiration_date)
@@ -194,7 +198,7 @@ where
         sqlx::QueryBuilder::new(r#" DELETE FROM members WHERE primary_user NOT IN ("#);
     let mut seperated = builder.separated(", ");
     for member in members {
-        seperated.push_bind(&member.primary.email);
+        seperated.push_bind(&member.primary.id);
     }
     seperated.push_unseparated(") ");
     let result = builder.build().execute(exec).await?;
@@ -464,6 +468,7 @@ pub struct Address {
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 struct PartnerUser {
+    partner_id: Option<String>,
     partner_uid: Option<i64>,
     partner_email: Option<String>,
     partner_first_name: Option<String>,
@@ -481,9 +486,11 @@ struct PartnerUser {
 impl From<PartnerUser> for Option<user::User> {
     fn from(value: PartnerUser) -> Option<user::User> {
         if let Some(uid) = value.partner_uid {
+            let partner_email = value.partner_email.unwrap();
             Some(user::User {
                 uid,
-                email: value.partner_email.unwrap(),
+                id: id_for_email(&partner_email),
+                email: partner_email,
                 first_name: value.partner_first_name,
                 last_name: value.partner_last_name,
                 birthday: value.partner_birthday,
