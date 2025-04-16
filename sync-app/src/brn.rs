@@ -2,7 +2,7 @@ use crate::{user, Error, Result};
 use futures::{stream, StreamExt, TryStreamExt};
 use sqlx::{postgres::PgExecutor, Postgres};
 
-#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+#[derive(Debug, sqlx::FromRow, serde::Serialize, Clone)]
 pub struct Brn {
     pub user_id: String,
     pub number: String,
