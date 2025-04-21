@@ -192,11 +192,11 @@ impl SyncDelete {
     }
 }
 
-/// Sync the mailing list merge fields to mailchimp
+/// Sync the mailing list merge fields for a given club (or all) to mailchimp
 #[derive(Debug, clap::Args)]
 pub struct SyncFields {
     /// The id of the mailing list to sync
-    id: u64,
+    id: Option<u64>,
     /// Delete user added merge fields
     #[arg(long)]
     process_deletes: bool,
@@ -204,17 +204,44 @@ pub struct SyncFields {
 
 impl SyncFields {
     async fn run(&self, settings: Settings) -> Result {
+        #[derive(Debug, serde::Serialize)]
+        struct JobResult {
+            name: String,
+            deleted: Vec<String>,
+            added: Vec<String>,
+            updated: Vec<String>,
+        }
         let db = settings.db.connect().await?;
-        let job = MailchimpJob::get(&db, self.id as i64)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("mailchimp job not found"))?;
-        let (added, deleted, updated) = job.sync_merge_fields(self.process_deletes).await?;
-        let json = json!({
-            "added": added,
-            "deleted": deleted,
-            "updated": updated,
-        });
-        print_json(&json)
+        let jobs = if let Some(id) = self.id {
+            let job = MailchimpJob::get(&db, id as i64)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("sync job not found"))?;
+            vec![job]
+        } else {
+            MailchimpJob::all(&db).await?
+        };
+        let results = futures::stream::iter(jobs)
+            .map(|job| async move {
+                let name = job.name.clone();
+                job.sync_merge_fields(self.process_deletes)
+                    .map_ok(|(added, deleted, updated)| {
+                        (
+                            job.id,
+                            JobResult {
+                                name,
+                                deleted: deleted.clone(),
+                                added: added.clone(),
+                                updated: updated.clone(),
+                            },
+                        )
+                    })
+                    .await
+            })
+            .buffered(20)
+            .try_collect::<Vec<(i64, JobResult)>>()
+            .await?;
+        let map: std::collections::HashMap<i64, JobResult> = results.into_iter().collect();
+        print_json(&map)
     }
 }
 
@@ -242,7 +269,7 @@ impl SyncRun {
         } else {
             MailchimpJob::all(&db).await?
         };
-        let results: Vec<(i64, JobResult)> = futures::stream::iter(jobs)
+        let results = futures::stream::iter(jobs)
             .map(|job| {
                 let ddb_settings = settings.ddb.clone();
                 async move {
@@ -261,7 +288,7 @@ impl SyncRun {
                         .await
                 }
             })
-            .buffered(10)
+            .buffered(20)
             .try_collect::<Vec<(i64, JobResult)>>()
             .await?;
 

@@ -500,6 +500,7 @@ pub mod mailchimp {
             merge_fields.to_value("LLOGIN", user.last_login),
             merge_fields.to_value("JOIN", member.join_date),
             merge_fields.to_value("EXPIRE", member.expiration_date),
+            merge_fields.to_value("BRN", member.brns.first()),
         ]
         .into_iter()
         .filter_map(|value| value.transpose())

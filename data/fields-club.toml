@@ -52,3 +52,8 @@ type = "date"
 tag = "LLOGIN"
 name = "Last Login"
 type = "date"
+
+[[merge_fields]]
+tag = "BRN"
+name = "Primary BRN"
+type = "text"
