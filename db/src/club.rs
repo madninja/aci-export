@@ -64,16 +64,6 @@ pub struct Club {
     pub region: i64,
 }
 
-impl From<ddb::clubs::Club> for Club {
-    fn from(value: ddb::clubs::Club) -> Self {
-        Self {
-            uid: value.uid as i64,
-            number: value.number,
-            name: value.name,
-            region: value.region,
-        }
-    }
-}
 pub async fn upsert_many<'c, E>(exec: E, clubs: &[Club]) -> Result<u64>
 where
     E: PgExecutor<'c>,

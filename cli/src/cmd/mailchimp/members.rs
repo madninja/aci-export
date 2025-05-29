@@ -42,8 +42,8 @@ pub struct List {
 
 impl List {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let client = settings.mailchimp.client()?;
-        let list = settings.mailchimp.list_override(&self.list)?;
+        let client = settings.mail.client()?;
+        let list = settings.mail.list_override(&self.list)?;
         if let Some(member_id) = &self.id {
             let member = mailchimp::members::for_id(&client, list, member_id).await?;
             print_json(&member)

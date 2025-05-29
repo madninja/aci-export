@@ -12,3 +12,4 @@ futures = "0"
 sqlx = { workspace = true }
 itertools = { workspace = true }
 mailchimp = { package = "mailchimp", path = "../mailchimp" }
+db = { package = "db", path = "../db" }

@@ -50,7 +50,7 @@ pub struct List {
 
 impl List {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let client = settings.mailchimp.client()?;
+        let client = settings.mail.client()?;
         if let Some(list_id) = &self.list {
             let list = mailchimp::lists::get(&client, list_id).await?;
             print_json(&list)
@@ -76,7 +76,7 @@ pub struct Create {
 impl Create {
     pub async fn run(&self, settings: &Settings) -> Result {
         let list = mailchimp::lists::List::from_config(config::File::with_name(&self.descriptor))?;
-        let client = settings.mailchimp.client()?;
+        let client = settings.mail.client()?;
         let new_list = mailchimp::lists::create(&client, &list).await?;
 
         if let Some(fields_descriptor) = &self.merge_fields {
@@ -100,7 +100,7 @@ pub struct Delete {
 
 impl Delete {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let client = settings.mailchimp.client()?;
+        let client = settings.mail.client()?;
         mailchimp::lists::delete(&client, &self.list).await?;
         Ok(())
     }
@@ -115,8 +115,8 @@ pub struct Info {
 
 impl Info {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let client = settings.mailchimp.client()?;
-        let list = settings.mailchimp.list_override(&self.list)?;
+        let client = settings.mail.client()?;
+        let list = settings.mail.list_override(&self.list)?;
         let info = mailchimp::lists::get(&client, list).await?;
         print_json(&info)
     }
@@ -135,8 +135,8 @@ impl Update {
     pub async fn run(&self, settings: &Settings) -> Result {
         let descriptor =
             mailchimp::lists::List::from_config(config::File::with_name(&self.descriptor))?;
-        let list = settings.mailchimp.list_override(&self.list)?;
-        let client = settings.mailchimp.client()?;
+        let list = settings.mail.list_override(&self.list)?;
+        let client = settings.mail.client()?;
         let updated = mailchimp::lists::update(&client, list, &descriptor).await?;
 
         print_json(&updated)
@@ -164,19 +164,19 @@ pub struct Sync {
 impl Sync {
     pub async fn run(&self, settings: &Settings) -> Result {
         let merge_fields = mailchimp::merge_fields::MergeFields::from_config(
-            config::File::with_name(settings.mailchimp.fields_override(&self.merge_fields)?),
+            config::File::with_name(settings.mail.fields_override(&self.merge_fields)?),
         )?;
-        let list = settings.mailchimp.list_override(&self.list)?;
-        let client = Arc::new(settings.mailchimp.client()?);
+        let list = settings.mail.list_override(&self.list)?;
+        let client = Arc::new(settings.mail.client()?);
         let db = settings.database.connect().await?;
 
         let db_members = if let Some(email) = &self.member {
             vec![ddb::members::by_email(&db, email)
                 .await?
                 .ok_or(anyhow::anyhow!("Member not found: {email}"))?]
-        } else if let Some(club) = settings.mailchimp.club_override(self.club) {
+        } else if let Some(club) = settings.mail.club_override(self.club) {
             ddb::members::by_club(&db, club).await?
-        } else if let Some(region) = settings.mailchimp.region_override(self.region) {
+        } else if let Some(region) = settings.mail.region_override(self.region) {
             ddb::members::by_region(&db, region).await?
         } else {
             ddb::members::all(&db).await?

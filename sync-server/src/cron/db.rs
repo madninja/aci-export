@@ -1,18 +1,28 @@
-use crate::{address, brn, club, member, region, settings::Settings, user, Result};
+use crate::{
+    settings::{AciDatabaseSettings, AppSettings},
+    Result,
+};
+use db::{address, brn, club, member, region, user};
 use itertools::Itertools;
 use serde::Serialize;
 use sqlx::PgExecutor;
 use std::{collections::HashMap, time::Instant};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
-pub async fn schedule(settings: Settings, scheduler: &mut JobScheduler) -> Result {
+pub async fn schedule(
+    app_settings: &AppSettings,
+    ddb_settings: &AciDatabaseSettings,
+    scheduler: &mut JobScheduler,
+) -> Result {
     let job = Job::new_async("@daily", {
-        let inner_settings = settings.clone();
+        let inner_app_settings = app_settings.clone();
+        let inner_ddb_settings = ddb_settings.clone();
         move |_uuid, _lock| {
             Box::pin({
-                let settings = inner_settings.clone();
+                let app_settings = inner_app_settings.clone();
+                let ddb_settings = inner_ddb_settings.clone();
                 async move {
-                    if let Err(err) = run(settings).await {
+                    if let Err(err) = run(&app_settings, &ddb_settings).await {
                         tracing::error!(?err, "failed to sync db");
                     }
                 }
@@ -200,7 +210,7 @@ where
         .filter_map(|ddb_member| {
             ddb_addresses
                 .remove(&ddb_member.primary.uid)
-                .map(|ddb_address| address::Address::from_member(ddb_member, ddb_address))
+                .map(|ddb_address| ddb_address.to_db_address_for_member(ddb_member))
         })
         .collect_vec();
     let upserted = address::upsert_many(db, &db_addresses).await?;
@@ -265,9 +275,12 @@ where
 }
 
 #[tracing::instrument(skip_all, name = "sync")]
-pub async fn run(settings: Settings) -> Result<SyncStatsMap> {
-    let ddb = settings.ddb.connect().await?;
-    let db = settings.db.connect().await?;
+pub async fn run(
+    app_settings: &AppSettings,
+    ddb_settings: &AciDatabaseSettings,
+) -> Result<SyncStatsMap> {
+    let ddb = ddb_settings.connect().await?;
+    let db = app_settings.db.connect().await?;
 
     tracing::info!("starting sync");
     let start = Instant::now();
@@ -282,7 +295,7 @@ pub async fn run(settings: Settings) -> Result<SyncStatsMap> {
         .collect_vec();
     let db_brns = ddb_members
         .iter()
-        .flat_map(brn::Brn::from_member)
+        .flat_map(Into::<Vec<brn::Brn>>::into)
         .collect_vec();
     let mut ddb_addresses = ddb::members::mailing_address::for_members(&ddb, &ddb_members).await?;
 

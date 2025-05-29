@@ -313,15 +313,6 @@ impl TryFrom<String> for MemberClass {
     }
 }
 
-impl From<ddb::members::MemberClass> for MemberClass {
-    fn from(value: ddb::members::MemberClass) -> Self {
-        match value {
-            ddb::members::MemberClass::Regular => Self::Regular,
-            ddb::members::MemberClass::Lifetime => Self::Lifetime,
-        }
-    }
-}
-
 #[derive(Debug, serde::Serialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum MemberStatus {
@@ -365,15 +356,6 @@ impl TryFrom<i32> for MemberStatus {
     }
 }
 
-impl From<ddb::members::MemberStatus> for MemberStatus {
-    fn from(value: ddb::members::MemberStatus) -> Self {
-        match value {
-            ddb::members::MemberStatus::Current => Self::Current,
-            ddb::members::MemberStatus::Lapsed => Self::Lapsed,
-        }
-    }
-}
-
 #[derive(Debug, serde::Serialize, Default, PartialEq, Eq, sqlx::Type)]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "member_type", rename_all = "lowercase")]
@@ -399,18 +381,8 @@ impl TryFrom<String> for MemberType {
             "field_home_club" | "regular" => Ok(Self::Regular),
             "field_memberships" | "affiliate" => Ok(Self::Affiliate),
             other => Err(sqlx::Error::decode(format!(
-                "unexpected member type {}",
-                other
+                "unexpected member type {other}",
             ))),
-        }
-    }
-}
-
-impl From<ddb::members::MemberType> for MemberType {
-    fn from(value: ddb::members::MemberType) -> Self {
-        match value {
-            ddb::members::MemberType::Regular => Self::Regular,
-            ddb::members::MemberType::Affiliate => Self::Affiliate,
         }
     }
 }
@@ -434,21 +406,6 @@ pub struct Member {
     pub join_date: Option<chrono::NaiveDate>,
     #[sqlx(flatten, try_from = "LocalClub")]
     pub local_club: club::Club,
-}
-
-impl From<ddb::members::Member> for Member {
-    fn from(value: ddb::members::Member) -> Self {
-        Self {
-            member_class: value.member_class.into(),
-            member_type: value.member_type.into(),
-            member_status: value.member_status.into(),
-            primary: value.primary.into(),
-            partner: value.partner.map(Into::into),
-            expiration_date: value.expiration_date,
-            join_date: value.join_date,
-            local_club: value.local_club.into(),
-        }
-    }
 }
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize, Clone)]

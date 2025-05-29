@@ -61,3 +61,18 @@ pub struct Region {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
+
+pub mod db {
+    use super::*;
+    use ::db as app_db;
+
+    impl From<Region> for app_db::region::Region {
+        fn from(value: Region) -> Self {
+            Self {
+                uid: value.uid as i64,
+                number: value.number,
+                name: value.name,
+            }
+        }
+    }
+}

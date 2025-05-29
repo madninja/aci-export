@@ -8,7 +8,7 @@ use std::path::Path;
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
-    pub mailchimp: MailchimpSetting,
+    pub mail: MailSetting,
 }
 
 impl Settings {
@@ -48,7 +48,7 @@ impl DatabaseSettings {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct MailchimpSetting {
+pub struct MailSetting {
     pub api_key: String,
     pub fields: String,
     pub club: Option<u64>,
@@ -56,7 +56,7 @@ pub struct MailchimpSetting {
     pub list: Option<String>,
 }
 
-impl MailchimpSetting {
+impl MailSetting {
     pub fn client(&self) -> Result<mailchimp::Client> {
         Ok(mailchimp::client::from_api_key(&self.api_key)?)
     }

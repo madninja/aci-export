@@ -66,3 +66,19 @@ pub struct Club {
     pub name: String,
     pub region: i64,
 }
+
+pub mod db {
+    use super::*;
+    use ::db as app_db;
+
+    impl From<Club> for app_db::club::Club {
+        fn from(value: Club) -> Self {
+            Self {
+                uid: value.uid as i64,
+                number: value.number,
+                name: value.name,
+                region: value.region,
+            }
+        }
+    }
+}

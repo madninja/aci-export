@@ -1,5 +1,4 @@
 use crate::{Error, Result};
-use ddb::regions;
 use futures::TryFutureExt;
 use sqlx::{PgExecutor, Postgres};
 
@@ -102,14 +101,4 @@ pub struct Region {
     pub number: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-}
-
-impl From<regions::Region> for Region {
-    fn from(value: regions::Region) -> Self {
-        Self {
-            uid: value.uid as i64,
-            number: value.number,
-            name: value.name,
-        }
-    }
 }

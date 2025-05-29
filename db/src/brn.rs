@@ -8,19 +8,6 @@ pub struct Brn {
     pub number: String,
 }
 
-impl Brn {
-    pub fn from_member(member: &ddb::members::Member) -> Vec<Brn> {
-        member
-            .brns
-            .iter()
-            .map(|number| Self {
-                user_id: user::id_for_email(&member.primary.email),
-                number: number.to_owned(),
-            })
-            .collect()
-    }
-}
-
 pub const FETCH_BRN_QUERY: &str = r#"
     SELECT
         user_id,

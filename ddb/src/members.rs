@@ -358,8 +358,7 @@ impl TryFrom<String> for MemberType {
             "field_home_club" | "regular" => Ok(Self::Regular),
             "field_memberships" | "affiliate" => Ok(Self::Affiliate),
             other => Err(sqlx::Error::decode(format!(
-                "unexpected member type {}",
-                other
+                "unexpected member type {other}",
             ))),
         }
     }
@@ -387,6 +386,80 @@ pub struct Member {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[sqlx(flatten, try_from = "Brns")]
     pub brns: Vec<String>,
+}
+
+pub mod db {
+    use super::*;
+    use ::db as app_db;
+
+    impl From<MemberClass> for app_db::member::MemberClass {
+        fn from(value: MemberClass) -> Self {
+            match value {
+                MemberClass::Regular => Self::Regular,
+                MemberClass::Lifetime => Self::Lifetime,
+            }
+        }
+    }
+
+    impl From<MemberStatus> for app_db::member::MemberStatus {
+        fn from(value: MemberStatus) -> Self {
+            match value {
+                MemberStatus::Current => Self::Current,
+                MemberStatus::Lapsed => Self::Lapsed,
+            }
+        }
+    }
+
+    impl From<MemberType> for app_db::member::MemberType {
+        fn from(value: MemberType) -> Self {
+            match value {
+                MemberType::Regular => Self::Regular,
+                MemberType::Affiliate => Self::Affiliate,
+            }
+        }
+    }
+
+    impl From<Member> for app_db::member::Member {
+        fn from(value: Member) -> Self {
+            Self {
+                member_class: value.member_class.into(),
+                member_type: value.member_type.into(),
+                member_status: value.member_status.into(),
+                primary: value.primary.into(),
+                partner: value.partner.map(Into::into),
+                expiration_date: value.expiration_date,
+                join_date: value.join_date,
+                local_club: value.local_club.into(),
+            }
+        }
+    }
+
+    impl From<&Member> for Vec<app_db::brn::Brn> {
+        fn from(value: &Member) -> Vec<app_db::brn::Brn> {
+            value
+                .brns
+                .iter()
+                .map(|number| app_db::brn::Brn {
+                    user_id: app_db::user::id_for_email(&value.primary.email),
+                    number: number.to_owned(),
+                })
+                .collect()
+        }
+    }
+
+    impl Address {
+        pub fn to_db_address_for_member(self, member: &Member) -> app_db::address::Address {
+            app_db::address::Address {
+                user_id: app_db::user::id_for_email(&member.primary.email),
+                street_address: self.street_address,
+                street_address_2: self.street_address_2,
+                zip_code: self.zip_code,
+                city: self.city,
+                state: self.state,
+                country: self.country,
+            }
+        }
+    }
 }
 
 pub mod mailchimp {

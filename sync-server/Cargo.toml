@@ -1,21 +1,29 @@
 [package]
-name = "sync-app"
+name = "sync-server"
 version = "0.1.2"
 edition = "2021"
 
 [[bin]]
-name = "sync-app"
-path = "src/main.rs"
+name = "sync-cli"
+path = "src/sync-cli.rs"
+doc = false
+
+[[bin]]
+name = "sync-server"
+path = "src/sync-shuttle.rs"
 doc = false
 
 [dependencies]
+sha2 = "0.10"
+base64 = "0.22"
 config = { version = "0", default-features = false, features = ["toml"] }
 tokio-cron-scheduler = "0.13"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+mailchimp-api = "0"
 tokio-graceful-shutdown = "0"
-sha2 = "0.10"
-base64 = "0.22"
 ddb = { package = "aci-ddb", path = "../ddb" }
+mailchimp = { package = "mailchimp", path = "../mailchimp" }
+db = { package = "db", path = "../db" }
 tracing = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
@@ -26,3 +34,7 @@ serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 itertools = { workspace = true }
+shuttle-runtime = { version = "0.54", default-features = false }
+shuttle-shared-db = { version = "0.54", features = ["postgres", "sqlx"] }
+axum = "0.8"
+axum-macros = "0"

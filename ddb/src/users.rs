@@ -64,3 +64,24 @@ where
 
     Ok(user)
 }
+
+pub mod db {
+    use super::*;
+    use ::db as app_db;
+
+    impl From<User> for app_db::user::User {
+        fn from(value: User) -> Self {
+            Self {
+                id: app_db::user::id_for_email(&value.email),
+                uid: value.uid as i64,
+                email: value.email,
+                first_name: value.first_name,
+                last_name: value.last_name,
+                birthday: value.birthday,
+                phone_mobile: None,
+                phone_home: None,
+                last_login: value.last_login,
+            }
+        }
+    }
+}

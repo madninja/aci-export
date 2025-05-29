@@ -7,9 +7,11 @@ use sqlx::{MySqlPool, PgPool};
 pub struct Settings {
     #[serde(default = "default_log")]
     pub log: String,
-    #[serde(default)]
-    pub db: DatabaseSettings,
     pub ddb: AciDatabaseSettings,
+    #[serde(default)]
+    pub mail: MailSettings,
+    #[serde(default)]
+    pub app: AppSettings,
 }
 impl Settings {
     /// Settings are loaded from the file in the given path.
@@ -17,7 +19,7 @@ impl Settings {
         Ok(Config::builder()
             // Source settings file
             .add_source(
-                Environment::with_prefix("APP")
+                Environment::with_prefix("SYNC")
                     .separator("_")
                     .prefix_separator("__"),
             )
@@ -27,17 +29,25 @@ impl Settings {
 }
 
 fn default_log() -> String {
-    "sync_app=info".to_string()
+    "sync_server=info,mailchimp=info,db=info".to_string()
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct MailSettings {
+    #[serde(default)]
+    pub db: DatabaseSettings,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct AppSettings {
+    #[serde(default)]
+    pub db: DatabaseSettings,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct DatabaseSettings {
     #[serde(default = "default_db_url")]
     pub url: String,
-}
-
-fn default_db_url() -> String {
-    "postgresql://postgres:postgres@127.0.0.1:54322/postgres".to_string()
 }
 
 impl Default for DatabaseSettings {
@@ -48,11 +58,15 @@ impl Default for DatabaseSettings {
     }
 }
 
+fn default_db_url() -> String {
+    "".to_string()
+}
+
 impl DatabaseSettings {
     pub async fn connect(&self) -> Result<PgPool> {
         let pool = PgPool::connect(&self.url)
             .await
-            .context("opening database")?;
+            .context(format!("opening database {}", self.url))?;
         Ok(pool)
     }
 }

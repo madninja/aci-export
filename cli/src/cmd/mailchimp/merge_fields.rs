@@ -48,8 +48,8 @@ pub struct List {
 
 impl List {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let client = settings.mailchimp.client()?;
-        let list = settings.mailchimp.list_override(&self.list)?;
+        let client = settings.mail.client()?;
+        let list = settings.mail.list_override(&self.list)?;
         if let Some(merge_id) = self.id {
             let merge_field = mailchimp::merge_fields::get(&client, list, merge_id).await?;
             print_json(&merge_field)
@@ -79,10 +79,10 @@ pub struct Create {
 
 impl Create {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let client = settings.mailchimp.client()?;
+        let client = settings.mail.client()?;
         let merge_field = mailchimp::merge_fields::create(
             &client,
-            settings.mailchimp.list_override(&self.list)?,
+            settings.mail.list_override(&self.list)?,
             MergeField {
                 tag: self.tag.clone(),
                 name: self.name.clone(),
@@ -107,8 +107,8 @@ pub struct Delete {
 impl Delete {
     pub async fn run(&self, settings: &Settings) -> Result {
         mailchimp::merge_fields::delete(
-            &settings.mailchimp.client()?,
-            settings.mailchimp.list_override(&self.list)?,
+            &settings.mail.client()?,
+            settings.mail.list_override(&self.list)?,
             &self.merge_id,
         )
         .await?;
@@ -131,11 +131,11 @@ pub struct Sync {
 impl Sync {
     pub async fn run(&self, settings: &Settings) -> Result {
         let merge_fields = mailchimp::merge_fields::MergeFields::from_config(
-            config::File::with_name(settings.mailchimp.fields_override(&self.merge_fields)?),
+            config::File::with_name(settings.mail.fields_override(&self.merge_fields)?),
         )?;
         let (added, deleted, updated) = mailchimp::merge_fields::sync(
-            &settings.mailchimp.client()?,
-            settings.mailchimp.list_override(&self.list)?,
+            &settings.mail.client()?,
+            settings.mail.list_override(&self.list)?,
             merge_fields,
             self.delete,
         )

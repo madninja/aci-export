@@ -1,63 +1,20 @@
-use clap::Parser;
+use crate::cmd::print_json;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use serde_json::json;
-use std::{env, process};
-use sync_mailchimp::{
+use sync_server::{
     cron::mailchimp::{Job as MailchimpJob, JobUpdate as MailchimpJobUpdate},
-    server,
     settings::Settings,
     Result,
 };
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-#[derive(Debug, Parser)]
-#[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(name = env!("CARGO_BIN_NAME"))]
-pub struct Cli {
-    #[clap(subcommand)]
-    cmd: Option<Cmd>,
-}
-
-impl Cli {
-    async fn run(&self) -> Result {
-        let settings = Settings::new()?;
-
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(&settings.log))
-            .with(tracing_subscriber::fmt::layer())
-            .init();
-
-        if let Some(cmd) = self.cmd.as_ref() {
-            cmd.run(settings).await?;
-        } else {
-            server::run(settings).await?;
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, clap::Subcommand)]
-pub enum Cmd {
-    Sync(Sync),
-}
-
-impl Cmd {
-    async fn run(&self, settings: Settings) -> Result {
-        match self {
-            Self::Sync(cmd) => cmd.run(settings).await,
-        }
-    }
-}
 
 #[derive(Debug, clap::Args)]
-pub struct Sync {
+pub struct Cmd {
     #[clap(subcommand)]
     cmd: SyncCmd,
 }
 
-impl Sync {
-    async fn run(&self, settings: Settings) -> Result {
+impl Cmd {
+    pub async fn run(&self, settings: Settings) -> Result {
         self.cmd.run(settings).await
     }
 }
@@ -91,7 +48,7 @@ pub struct SyncList {}
 
 impl SyncList {
     async fn run(&self, settings: Settings) -> Result {
-        let db = settings.db.connect().await?;
+        let db = settings.mail.db.connect().await?;
         let jobs = MailchimpJob::all(&db).await?;
         print_json(&jobs)
     }
@@ -122,7 +79,7 @@ impl SyncCreate {
             region: self.region,
             ..Default::default()
         };
-        let db = settings.db.connect().await?;
+        let db = settings.mail.db.connect().await?;
         let job = MailchimpJob::create(&db, &to_create).await?;
         print_json(&job)
     }
@@ -161,7 +118,7 @@ impl From<&SyncUpdate> for MailchimpJobUpdate {
 impl SyncUpdate {
     async fn run(&self, settings: Settings) -> Result {
         let update = MailchimpJobUpdate::from(self);
-        let db = settings.db.connect().await?;
+        let db = settings.mail.db.connect().await?;
         let job = MailchimpJob::update(&db, &update).await?;
         print_json(&job)
     }
@@ -179,7 +136,7 @@ pub struct SyncDelete {
 
 impl SyncDelete {
     async fn run(&self, settings: Settings) -> Result {
-        let db = settings.db.connect().await?;
+        let db = settings.mail.db.connect().await?;
         let job = MailchimpJob::get(&db, self.id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("no such job"))?;
@@ -211,7 +168,7 @@ impl SyncFields {
             added: Vec<String>,
             updated: Vec<String>,
         }
-        let db = settings.db.connect().await?;
+        let db = settings.mail.db.connect().await?;
         let jobs = if let Some(id) = self.id {
             let job = MailchimpJob::get(&db, id as i64)
                 .await?
@@ -260,7 +217,7 @@ impl SyncRun {
             deleted: usize,
             upserted: usize,
         }
-        let db = settings.db.connect().await?;
+        let db = settings.mail.db.connect().await?;
         let jobs = if let Some(id) = self.id {
             let job = MailchimpJob::get(&db, id as i64)
                 .await?
@@ -295,20 +252,4 @@ impl SyncRun {
         let map: std::collections::HashMap<i64, JobResult> = results.into_iter().collect();
         print_json(&map)
     }
-}
-
-pub fn print_json<T: ?Sized + serde::Serialize>(value: &T) -> Result {
-    println!("{}", serde_json::to_string_pretty(value)?);
-    Ok(())
-}
-
-#[tokio::main]
-async fn main() -> Result {
-    let cli = Cli::parse();
-    if let Err(e) = cli.run().await {
-        eprintln!("error: {:?}", e);
-        process::exit(1);
-    }
-
-    Ok(())
 }

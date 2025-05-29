@@ -55,5 +55,6 @@ alter table users enable row level security;
 alter table regions enable row level security;
 alter table clubs enable row level security;
 alter table members enable row level security;
+alter table addresses enable row level security;
 alter table brns enable row level security;
 

@@ -1,14 +1,16 @@
 use crate::{settings::Settings, Result};
+use sqlx::PgPool;
 use tokio_cron_scheduler::JobScheduler;
 use tokio_graceful_shutdown::SubsystemHandle;
 
+pub mod db;
 pub mod mailchimp;
 
-pub async fn subsystem(settings: Settings, handle: SubsystemHandle) -> Result<()> {
-    let db = settings.db.connect().await?;
+pub async fn subsystem(settings: Settings, db: PgPool, handle: SubsystemHandle) -> Result<()> {
     let mut scheduler = JobScheduler::new().await?;
     tracing::info!("started scheduler");
-    mailchimp::Job::schedule(&db, &settings.ddb, &mut scheduler).await?;
+    mailchimp::schedule(db, &settings.ddb, &mut scheduler).await?;
+    db::schedule(&settings.app, &settings.ddb, &mut scheduler).await?;
     scheduler.start().await?;
     handle.on_shutdown_requested().await;
 

@@ -13,20 +13,6 @@ pub struct Address {
     pub country: Option<String>,
 }
 
-impl Address {
-    pub fn from_member(member: &ddb::members::Member, address: ddb::members::Address) -> Self {
-        Self {
-            user_id: user::id_for_email(&member.primary.email),
-            street_address: address.street_address,
-            street_address_2: address.street_address_2,
-            zip_code: address.zip_code,
-            city: address.city,
-            state: address.state,
-            country: address.country,
-        }
-    }
-}
-
 pub const FETCH_ADDRESS_QUERY: &str = r#"
     SELECT
         user_id,

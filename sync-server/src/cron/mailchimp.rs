@@ -2,15 +2,16 @@ use crate::{settings::AciDatabaseSettings, Error, Result};
 use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
 use mailchimp::RetryPolicy;
-use sqlx::{query::QueryAs, Database, Encode, Type};
+use sqlx::{query::QueryAs, Database, Encode, PgPool, Type};
 use std::time::Instant;
 use tokio_cron_scheduler::{Job as CronJob, JobScheduler};
 
 #[derive(Debug, sqlx::FromRow, Clone, serde::Serialize, Default)]
 pub struct Job {
     pub id: i64,
-    pub name: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub api_key: String,
+    pub name: String,
     pub list: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub club: Option<i64>,
@@ -91,22 +92,19 @@ impl JobUpdate {
     }
 }
 
-impl Job {
-    pub async fn schedule<'c, E>(
-        db: E,
-        ddb_settings: &AciDatabaseSettings,
-        scheduler: &mut JobScheduler,
-    ) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        let job_descriptors = Self::all(db).await?;
-        for job in job_descriptors {
-            scheduler.add(job.to_job(ddb_settings.clone())?).await?;
-        }
-        Ok(())
+pub async fn schedule(
+    db: PgPool,
+    ddb_settings: &AciDatabaseSettings,
+    scheduler: &mut JobScheduler,
+) -> Result {
+    let job_descriptors = Job::all(&db).await?;
+    for job in job_descriptors {
+        scheduler.add(job.to_job(ddb_settings.clone())?).await?;
     }
+    Ok(())
+}
 
+impl Job {
     fn to_job(&self, ddb_url: AciDatabaseSettings) -> Result<CronJob> {
         CronJob::new_async("@daily", {
             let inner = self.clone();

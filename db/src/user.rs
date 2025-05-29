@@ -21,22 +21,6 @@ pub struct User {
     pub last_login: Option<chrono::NaiveDate>,
 }
 
-impl From<ddb::users::User> for User {
-    fn from(value: ddb::users::User) -> Self {
-        Self {
-            id: id_for_email(&value.email),
-            uid: value.uid as i64,
-            email: value.email,
-            first_name: value.first_name,
-            last_name: value.last_name,
-            birthday: value.birthday,
-            phone_mobile: None,
-            phone_home: None,
-            last_login: value.last_login,
-        }
-    }
-}
-
 pub const FETCH_USER_QUERY: &str = r#"
     SELECT
         id,
