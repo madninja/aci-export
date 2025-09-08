@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use sync_server::settings::Settings;
 use tracing_subscriber::EnvFilter;
 
-#[shuttle_runtime::main]
+#[shuttle_runtime::main(instance_size = "s")]
 async fn main(
     #[shuttle_shared_db::Postgres] db: PgPool,
     #[shuttle_runtime::Secrets] secrets: SecretStore,
