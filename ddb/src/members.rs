@@ -689,13 +689,14 @@ impl From<LocalClub> for Club {
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 struct Brns {
-    brns: String,
+    brns: Option<String>,
 }
 
 impl From<Brns> for Vec<String> {
     fn from(value: Brns) -> Self {
         value
             .brns
+            .unwrap_or_default()
             .split(",")
             .map(|v| v.trim().to_string())
             .collect()
