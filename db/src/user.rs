@@ -81,7 +81,7 @@ where
         return Ok(0);
     }
     let affected: Vec<u64> = stream::iter(users)
-        .chunks(5000)
+        .chunks(2000)
         .map(Ok)
         .and_then(|chunk| async move {
             let result = sqlx::QueryBuilder::new(

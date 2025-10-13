@@ -144,7 +144,7 @@ where
     }
 
     let affected: Vec<u64> = stream::iter(members)
-        .chunks(5000)
+        .chunks(2000)
         .map(Ok)
         .and_then(|chunk| async move {
             let result = QueryBuilder::new(
