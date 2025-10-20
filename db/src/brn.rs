@@ -1,4 +1,4 @@
-use crate::{user, Error, Result};
+use crate::{user, Error, Result, DB_INSERT_CHUNK_SIZE};
 use futures::{stream, StreamExt, TryStreamExt};
 use sqlx::{postgres::PgExecutor, Postgres};
 
@@ -55,7 +55,7 @@ where
         return Ok(0);
     }
     let affected: Vec<u64> = stream::iter(brns)
-        .chunks(1000)
+        .chunks(DB_INSERT_CHUNK_SIZE)
         .map(Ok)
         .and_then(|chunk| async move {
             let result = sqlx::QueryBuilder::new(

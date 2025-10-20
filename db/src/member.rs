@@ -1,7 +1,7 @@
 use crate::{
     club,
     user::{self, id_for_email},
-    Error, Result,
+    Error, Result, DB_INSERT_CHUNK_SIZE,
 };
 use futures::{stream, StreamExt, TryStreamExt};
 use sqlx::{postgres::PgExecutor, Postgres, QueryBuilder};
@@ -144,7 +144,7 @@ where
     }
 
     let affected: Vec<u64> = stream::iter(members)
-        .chunks(1000)
+        .chunks(DB_INSERT_CHUNK_SIZE)
         .map(Ok)
         .and_then(|chunk| async move {
             let result = QueryBuilder::new(
