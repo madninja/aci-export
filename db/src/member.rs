@@ -347,7 +347,7 @@ impl TryFrom<i32> for MemberStatus {
     type Error = sqlx::Error;
     fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
         match value {
-            947 => Ok(Self::Current),
+            947 | 1099 => Ok(Self::Current),
             951 => Ok(Self::Lapsed),
             other => Err(sqlx::Error::decode(format!(
                 "unexpected member status {other}"

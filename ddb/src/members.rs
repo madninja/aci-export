@@ -158,7 +158,7 @@ const FETCH_MEMBERS_QUERY: &str = r#"
     		AND(paragraphs_item_field_data.type IN('membership'))
     		AND(paragraph__field_leave_date.field_leave_date_value IS NOT NULL)
     		AND(paragraph__field_join_date.field_join_date_value IS NOT NULL))
-    	AND((alldata.personal_status_id IN('947', '951'))
+    	AND((alldata.personal_status_id IN('947', '951', '1099'))
     	AND((CAST(paragraph__field_leave_date.field_leave_date_value AS DATE) >= DATE_SUB(NOW(), INTERVAL 1 YEAR)))
     AND((CAST(paragraph__field_join_date.field_join_date_value AS DATE) <= NOW()))
     AND(((useraffclub.entity_id IS NOT NULL
@@ -325,7 +325,7 @@ impl TryFrom<i32> for MemberStatus {
     type Error = sqlx::Error;
     fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
         match value {
-            947 => Ok(Self::Current),
+            947 | 1099 => Ok(Self::Current),
             951 => Ok(Self::Lapsed),
             other => Err(sqlx::Error::decode(format!(
                 "unexpected member status {other}"
