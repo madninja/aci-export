@@ -253,7 +253,7 @@ pub mod tags {
         retries: RetryPolicy,
     ) -> Result {
         futures::stream::iter(tag_updates)
-            .chunks(2000)
+            .chunks(1000)
             .map(Ok::<Vec<_>, Error>)
             .map_ok(|updates| (client.clone(), updates, retries))
             .try_for_each_concurrent(10, |(client, updates, retries)| async move {
