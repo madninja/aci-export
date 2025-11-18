@@ -16,6 +16,7 @@ pub struct Cli {
 
 impl Cli {
     async fn run(&self) -> Result {
+        dotenvy::from_filename_override("Secrets.toml")?;
         let settings = Settings::new()?;
         tracing_subscriber::registry()
             .with(tracing_subscriber::EnvFilter::new(&settings.log))

@@ -3,6 +3,7 @@ members = ["ddb", "mailchimp", "cli", "db", "sync-server"]
 resolver = "2"
 
 [workspace.dependencies]
+dotenvy = "0.15"
 futures = "0"
 serde_json = "1"
 anyhow = "1"

@@ -57,26 +57,37 @@ impl SyncList {
 /// Create a new sync job
 #[derive(Debug, clap::Args)]
 pub struct SyncCreate {
+    /// Name of the club
     #[arg(long)]
     name: String,
+    /// Club or region of to sync{
+    #[command(flatten)]
+    club_or_region: ClubOrRegion,
+    /// Mailchimp API key
+    #[arg(long)]
+    api_key: String,
+    /// Mailchimp audience identifier
+    #[arg(long)]
+    list: String,
+}
+
+#[derive(Debug, clap::Args)]
+#[group(required = true, multiple = false)]
+struct ClubOrRegion {
     #[arg(long)]
     club: Option<i64>,
     #[arg(long)]
     region: Option<i32>,
-    #[arg(long)]
-    api_key: String,
-    #[arg(long)]
-    list: String,
 }
 
 impl SyncCreate {
     async fn run(&self, settings: Settings) -> Result {
         let to_create = MailchimpJob {
             name: self.name.clone(),
-            club: self.club,
+            club: self.club_or_region.club,
             list: self.list.clone(),
             api_key: self.api_key.clone(),
-            region: self.region,
+            region: self.club_or_region.region,
             ..Default::default()
         };
         let db = settings.mail.db.connect().await?;

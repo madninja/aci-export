@@ -3079,6 +3079,7 @@ dependencies = [
  "clap",
  "config",
  "db",
+ "dotenvy",
  "futures",
  "itertools",
  "mailchimp",

@@ -61,7 +61,8 @@ pub struct Club {
     pub number: Option<i64>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub name: String,
-    pub region: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<i64>,
 }
 
 pub async fn upsert_many<'c, E>(exec: E, clubs: &[Club]) -> Result<u64>

@@ -19,23 +19,26 @@ pub async fn by_club<'c, E>(exec: E, uid: u64) -> Result<Vec<Member>>
 where
     E: MySqlExecutor<'c>,
 {
-    let members = fetch_members_query()
-        .push("AND node_field_data_paragraph__field_club.nid = ")
-        .push_bind(uid)
+    let all = fetch_club_members_query()
         .build_query_as::<Member>()
+        .bind(Some(uid))
+        .bind(Some(uid))
+        .bind(None::<u64>)
         .fetch_all(exec)
         .await?;
-    Ok(dedupe_members(members))
+
+    Ok(dedupe_members(all))
 }
 
 pub async fn by_region<'c, E>(exec: E, uid: u64) -> Result<Vec<Member>>
 where
     E: MySqlExecutor<'c>,
 {
-    let all = fetch_members_query()
-        .push("AND node_field_data_node__field_region.nid = ")
-        .push_bind(uid)
+    let all = fetch_club_members_query()
         .build_query_as::<Member>()
+        .bind(None::<u64>)
+        .bind(None::<u64>)
+        .bind(Some(uid))
         .fetch_all(exec)
         .await?;
 
@@ -88,7 +91,7 @@ where
     Ok(member)
 }
 
-const FETCH_MEMBERS_QUERY: &str = r#"
+const FETCH_ALL_MEMBERS_QUERY: &str = r#"
     SELECT
     	users_field_data.uid AS uid,
     	alldata.email AS email,
@@ -168,9 +171,166 @@ const FETCH_MEMBERS_QUERY: &str = r#"
 "#;
 
 fn fetch_members_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
-    sqlx::QueryBuilder::new(FETCH_MEMBERS_QUERY)
+    sqlx::QueryBuilder::new(FETCH_ALL_MEMBERS_QUERY)
 }
 
+/* Parameters (MySQL/MariaDB positional):
+   1) ?  -> club_nid (nullable)
+   2) ?  -> echo of club_nid for the WHERE ? IS NOT NULL guard
+   3) ?  -> region_nid (nullable)
+*/
+
+const FETCH_CLUB_MEMBERS_QUERY: &str = r#"
+WITH acp AS (
+  SELECT
+    p.parent_id AS uid,
+    p.id        AS paragraph_id,
+    pc.field_club_target_id AS club_nid,
+    fjd.field_join_date_value  AS join_dt_raw,
+    fld.field_leave_date_value AS leave_dt_raw
+  FROM paragraphs_item_field_data p
+  JOIN paragraph__field_club pc
+    ON pc.entity_id = p.id
+   AND pc.deleted = '0'
+  LEFT JOIN paragraph__field_join_date fjd
+    ON fjd.entity_id = p.id AND fjd.deleted = '0'
+  LEFT JOIN paragraph__field_leave_date fld
+    ON fld.entity_id = p.id AND fld.deleted = '0'
+  WHERE p.status = '1'
+    AND p.type   = 'membership'
+    /* ---------- club or region scope (parameterized) ---------- */
+    AND pc.field_club_target_id IN (
+          /* branch 1: single club */
+          SELECT club_nid
+          FROM (SELECT ? AS club_nid) AS one
+          WHERE ? IS NOT NULL
+          UNION ALL
+          /* branch 2: all clubs in a region */
+          SELECT nr.entity_id AS club_nid
+          FROM node__field_region nr
+          WHERE nr.deleted = '0'
+            AND nr.field_region_target_id = ?
+        )
+    AND fjd.field_join_date_value IS NOT NULL
+    AND DATE(fjd.field_join_date_value) <= CURRENT_DATE
+    AND (fld.field_leave_date_value IS NULL OR DATE(fld.field_leave_date_value) >= CURRENT_DATE)
+),
+
+flags AS (
+  SELECT
+    a.uid,
+    GREATEST(MAX(uhc.entity_id IS NOT NULL), MAX(uic.entity_id IS NOT NULL)) AS member_flag,
+    MAX(uac.entity_id IS NOT NULL)                                          AS affiliate_flag,
+    MAX(DATE(a.join_dt_raw))                                                AS latest_join_date,
+    MAX(DATE(a.leave_dt_raw))                                               AS latest_expiration_date
+  FROM acp a
+  LEFT JOIN user__field_home_club uhc
+    ON uhc.entity_id = a.uid
+   AND uhc.field_home_club_target_id = a.paragraph_id
+   AND uhc.deleted = '0'
+  LEFT JOIN user__field_memberships uac
+    ON uac.entity_id = a.uid
+   AND uac.field_memberships_target_id = a.paragraph_id
+   AND uac.deleted = '0'
+  LEFT JOIN user__field_intraclub_memberships uic
+    ON uic.entity_id = a.uid
+   AND uic.field_intraclub_memberships_target_id = a.paragraph_id
+   AND uic.deleted = '0'
+  GROUP BY a.uid
+),
+
+active_pick AS (
+  SELECT a1.uid, a1.paragraph_id, a1.club_nid
+  FROM acp a1
+  JOIN (
+    SELECT uid, MAX(DATE(join_dt_raw)) AS max_join
+    FROM acp
+    GROUP BY uid
+  ) pick
+    ON pick.uid = a1.uid AND pick.max_join = DATE(a1.join_dt_raw)
+)
+
+SELECT
+  /* ===================== PRIMARY FIELDS ===================== */
+  u.uid                                        AS uid,
+  DATE(FROM_UNIXTIME(u.login))                 AS last_login,
+  md.first_name                                AS first_name,
+  md.last_name                                 AS last_name,
+  md.email                                     AS email,
+  CAST(md.birthdate AS DATE)                   AS birthday,
+
+  /* ===================== MEMBER INFORMATION FIELDS ===================== */
+  CASE
+    WHEN flags.member_flag = 1 THEN 'regular'
+    WHEN flags.affiliate_flag = 1 THEN 'affiliate'
+    ELSE NULL
+  END                                          AS member_type,
+  COALESCE(ttd.name, 'Regular')                AS member_class,
+  md.personal_status_id                        AS member_status,
+  flags.latest_join_date                       AS join_date,
+  flags.latest_expiration_date                 AS expiration_date,
+
+  /* ===================== CLUB FIELDS ===================== */
+  CAST(cnum.field_club_number_value AS SIGNED) AS club_number,
+  nclub.nid                                    AS club_uid,
+  nclub.title                                  AS club_name,
+  rnum.field_region_number_value               AS club_region,
+  region_node.nid                              AS club_region_uid,
+  brns.brns_values                             AS brns,
+
+  /* ===================== PARTNER FIELDS ===================== */
+  CAST(md.partner_user_id AS UNSIGNED)         AS partner_uid,
+  DATE(FROM_UNIXTIME(pu.login))                AS partner_last_login,
+  md.partner_first_name                        AS partner_first_name,
+  md.partner_last_name                         AS partner_last_name,
+  md.partner_email                             AS partner_email,
+  CAST(md.partner_birthdate AS DATE)           AS partner_birthday
+
+FROM flags
+JOIN users_field_data u
+  ON u.uid = flags.uid
+JOIN z_member_search_main md
+  ON md.user_id = u.uid
+
+LEFT JOIN users_field_data pu
+  ON pu.uid = md.partner_user_id  /* get partner’s last_login */
+
+LEFT JOIN user__field_primary_member pm_self
+  ON pm_self.entity_id = u.uid
+ AND pm_self.field_primary_member_target_id IS NOT NULL
+
+LEFT JOIN active_pick
+  ON active_pick.uid = u.uid
+
+LEFT JOIN paragraph__field_membership_class mc
+  ON mc.entity_id = active_pick.paragraph_id
+ AND mc.deleted = '0'
+LEFT JOIN taxonomy_term_field_data ttd
+  ON ttd.tid = mc.field_membership_class_target_id
+
+LEFT JOIN node_field_data nclub
+  ON nclub.nid = active_pick.club_nid
+LEFT JOIN node__field_club_number cnum
+  ON cnum.entity_id = nclub.nid AND cnum.deleted = '0'
+LEFT JOIN node__field_region cr
+  ON cr.entity_id = nclub.nid AND cr.deleted = '0'
+LEFT JOIN node_field_data region_node
+  ON region_node.nid = cr.field_region_target_id
+LEFT JOIN node__field_region_number rnum
+  ON rnum.entity_id = region_node.nid AND rnum.deleted = '0'
+
+LEFT JOIN v_brns brns
+  ON brns.user_id = u.uid
+
+WHERE
+  md.personal_status_id IN ('947', '951', '1099')
+  AND pm_self.entity_id IS NULL
+  AND (flags.member_flag = 1 OR flags.affiliate_flag = 1)
+"#;
+
+fn fetch_club_members_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
+    sqlx::QueryBuilder::new(FETCH_CLUB_MEMBERS_QUERY)
+}
 pub mod mailing_address {
     use super::*;
 
@@ -614,7 +774,7 @@ pub mod mailchimp {
         vec![
             merge_fields.to_value("CLUB", club.name.as_str()),
             merge_fields.to_value("CLUB_NR", club.number),
-            merge_fields.to_value("REGION", club.region as u64),
+            merge_fields.to_value("REGION", club.region),
         ]
         .into_iter()
         .filter_map(|value| value.transpose())
@@ -682,7 +842,7 @@ impl From<LocalClub> for Club {
             uid: value.club_uid.unwrap_or_default(),
             number: value.club_number,
             name: value.club_name.unwrap_or_default(),
-            region: value.club_region.unwrap_or_default(),
+            region: value.club_region,
         }
     }
 }

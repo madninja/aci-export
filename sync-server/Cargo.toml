@@ -22,6 +22,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 mailchimp-api = "0"
 tokio-graceful-shutdown = "0"
 ddb = { package = "aci-ddb", path = "../ddb" }
+dotenvy = { workspace = true }
 mailchimp = { package = "mailchimp", path = "../mailchimp" }
 db = { package = "db", path = "../db" }
 tracing = { workspace = true }
