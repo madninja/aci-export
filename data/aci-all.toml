@@ -1,7 +1,0 @@
-[database]
-# url = "mysql://..."
-
-[mailchimp]
-#api_jey = "..."
-list = "2debb345e7"
-fields = "data/fields-all.toml"

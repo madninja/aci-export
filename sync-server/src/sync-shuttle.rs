@@ -11,7 +11,7 @@ async fn main(
     #[shuttle_runtime::Secrets] secrets: SecretStore,
 ) -> Result<SyncServer, shuttle_runtime::Error> {
     for (key, secret) in secrets {
-        std::env::set_var(key, secret);
+        unsafe { std::env::set_var(key, secret) };
     }
     let settings = sync_server::settings::Settings::new()?;
     tracing_subscriber::fmt()

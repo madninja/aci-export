@@ -1,6 +1,9 @@
 [workspace]
-members = ["ddb", "mailchimp", "cli", "db", "sync-server"]
+members = ["ddb", "mailchimp", "db", "sync-server"]
 resolver = "2"
+
+[workspace.package]
+edition = "2024"
 
 [workspace.dependencies]
 dotenvy = "0.15"

@@ -1,6 +1,0 @@
-[database]
-
-[mailchimp]
-list = "1975e5f58d"
-club = 46206
-fields = "data/fields-club.toml"

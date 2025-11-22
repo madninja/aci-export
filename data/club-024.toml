@@ -1,9 +1,0 @@
-[database]
-#url = ".."
-
-[mailchimp]
-# api_key = "..."
-list = "0c33244dd9"
-club = 1799
-fields = "data/fields-club.toml"
-

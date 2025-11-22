@@ -1,6 +1,6 @@
-use crate::{cmd::print_json, settings::Settings, Result};
+use super::{connect_from_env, print_json, Result};
+use aci_ddb::clubs;
 use anyhow::anyhow;
-use ddb::clubs;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
@@ -9,8 +9,8 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        self.cmd.run(settings).await
+    pub async fn run(&self) -> Result {
+        self.cmd.run().await
     }
 }
 
@@ -22,11 +22,11 @@ pub enum ClubCmd {
 }
 
 impl ClubCmd {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self) -> Result {
         match self {
-            Self::Number(cmd) => cmd.run(settings).await,
-            Self::Uid(cmd) => cmd.run(settings).await,
-            Self::List(cmd) => cmd.run(settings).await,
+            Self::Number(cmd) => cmd.run().await,
+            Self::Uid(cmd) => cmd.run().await,
+            Self::List(cmd) => cmd.run().await,
         }
     }
 }
@@ -37,8 +37,8 @@ pub struct Number {
 }
 
 impl Number {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        let db = settings.database.connect().await?;
+    pub async fn run(&self) -> Result {
+        let db = connect_from_env().await?;
         let club = clubs::by_number(&db, self.number)
             .await?
             .ok_or_else(|| anyhow!("Club {} not found", self.number))?;
@@ -53,8 +53,8 @@ pub struct Uid {
 }
 
 impl Uid {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        let db = settings.database.connect().await?;
+    pub async fn run(&self) -> Result {
+        let db = connect_from_env().await?;
         let club = clubs::by_uid(&db, self.uid)
             .await?
             .ok_or_else(|| anyhow!("Club {} not found", self.uid))?;
@@ -67,8 +67,8 @@ impl Uid {
 pub struct List {}
 
 impl List {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        let db = settings.database.connect().await?;
+    pub async fn run(&self) -> Result {
+        let db = connect_from_env().await?;
         let clubs = clubs::all(&db).await?;
         print_json(&clubs)
     }

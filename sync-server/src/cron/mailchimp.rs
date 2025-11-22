@@ -226,17 +226,12 @@ impl Job {
     }
 
     fn merge_fields(&self) -> Result<mailchimp::merge_fields::MergeFields> {
-        let str = if self.club.is_some() {
-            include_str!("../../../data/fields-club.toml")
+        if self.club.is_some() {
+            mailchimp::merge_fields::MergeFields::club()
         } else {
             // region or all
-            include_str!("../../../data/fields-all.toml")
-        };
-
-        mailchimp::merge_fields::MergeFields::from_config(config::File::from_str(
-            str,
-            config::FileFormat::Toml,
-        ))
+            mailchimp::merge_fields::MergeFields::all()
+        }
         .map_err(Error::from)
     }
 

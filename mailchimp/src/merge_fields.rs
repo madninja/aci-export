@@ -193,6 +193,18 @@ impl MergeFields {
         }
         read_config::<MergeFieldsConfig, S>(source).and_then(TryInto::try_into)
     }
+
+    /// Load merge fields configuration for club-specific syncs
+    pub fn club() -> Result<Self> {
+        let str = include_str!("../data/fields-club.toml");
+        Self::from_config(config::File::from_str(str, config::FileFormat::Toml))
+    }
+
+    /// Load merge fields configuration for all members syncs
+    pub fn all() -> Result<Self> {
+        let str = include_str!("../data/fields-all.toml");
+        Self::from_config(config::File::from_str(str, config::FileFormat::Toml))
+    }
 }
 
 impl<'de> Deserialize<'de> for MergeFields {

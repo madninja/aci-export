@@ -1,7 +1,12 @@
 [package]
 name = "aci-ddb"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+
+[[bin]]
+name = "aci-ddb"
+path = "src/main.rs"
+doc = false
 
 [dependencies]
 thiserror = "1"
@@ -13,3 +18,8 @@ sqlx = { workspace = true }
 itertools = { workspace = true }
 mailchimp = { package = "mailchimp", path = "../mailchimp" }
 db = { package = "db", path = "../db" }
+anyhow = { workspace = true }
+clap = { workspace = true }
+dotenvy = { workspace = true }
+csv = "1"
+tokio = { workspace = true }
