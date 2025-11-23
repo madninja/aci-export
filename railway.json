@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "cargo build --release --bin sync-cli -p sync-server"
+  },
+  "deploy": {
+    "cronSchedule": "0 5 * * *",
+    "startCommand": "./target/release/sync-cli",
+    "restartPolicyType": "NEVER"
+  }
+}

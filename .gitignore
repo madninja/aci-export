@@ -2,8 +2,8 @@
 /target/
 **/*.rs.bk
 **/settings*.toml
-*.json*
 Secrets.toml
 /target
 .shuttle*
 Secrets*.toml
+.env
