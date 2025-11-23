@@ -222,12 +222,6 @@ pub struct SyncRun {
 
 impl SyncRun {
     async fn run(&self, settings: Settings) -> Result {
-        #[derive(Debug, serde::Serialize)]
-        struct JobResult {
-            name: String,
-            deleted: usize,
-            upserted: usize,
-        }
         let db = settings.mail.db.connect().await?;
         let jobs = if let Some(id) = self.id {
             let job = MailchimpJob::get(&db, id as i64)
@@ -237,30 +231,8 @@ impl SyncRun {
         } else {
             MailchimpJob::all(&db).await?
         };
-        let results = futures::stream::iter(jobs)
-            .map(|job| {
-                let ddb_settings = settings.ddb.clone();
-                async move {
-                    let name = job.name.clone();
-                    job.sync(ddb_settings)
-                        .map_ok(|(deleted, upserted)| {
-                            (
-                                job.id,
-                                JobResult {
-                                    name,
-                                    deleted,
-                                    upserted,
-                                },
-                            )
-                        })
-                        .await
-                }
-            })
-            .buffered(20)
-            .try_collect::<Vec<(i64, JobResult)>>()
-            .await?;
 
-        let map: std::collections::HashMap<i64, JobResult> = results.into_iter().collect();
+        let map = MailchimpJob::sync_many(jobs, settings.ddb).await?;
         print_json(&map)
     }
 }

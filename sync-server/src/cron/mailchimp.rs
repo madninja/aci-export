@@ -6,6 +6,13 @@ use sqlx::{query::QueryAs, Database, Encode, PgPool, Type};
 use std::time::Instant;
 use tokio_cron_scheduler::{Job as CronJob, JobScheduler};
 
+#[derive(Debug, serde::Serialize)]
+pub struct JobSyncResult {
+    pub name: String,
+    pub deleted: usize,
+    pub upserted: usize,
+}
+
 #[derive(Debug, sqlx::FromRow, Clone, serde::Serialize, Default)]
 pub struct Job {
     pub id: i64,
@@ -244,6 +251,39 @@ impl Job {
         mailchimp::merge_fields::sync(&client, &self.list, self.merge_fields()?, process_deletes)
             .map_err(Error::from)
             .await
+    }
+
+    /// Run sync for multiple jobs in parallel, returning results keyed by job ID
+    pub async fn sync_many(
+        jobs: Vec<Self>,
+        ddb_settings: AciDatabaseSettings,
+    ) -> Result<std::collections::HashMap<i64, JobSyncResult>> {
+        use futures::{StreamExt, TryStreamExt};
+
+        let results = futures::stream::iter(jobs)
+            .map(|job| {
+                let ddb_settings = ddb_settings.clone();
+                async move {
+                    let name = job.name.clone();
+                    job.sync(ddb_settings)
+                        .await
+                        .map(|(deleted, upserted)| {
+                            (
+                                job.id,
+                                JobSyncResult {
+                                    name,
+                                    deleted,
+                                    upserted,
+                                },
+                            )
+                        })
+                }
+            })
+            .buffered(20)
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        Ok(results.into_iter().collect())
     }
 
     #[tracing::instrument(skip_all, name = "sync", fields(name = self.name, id = self.id))]

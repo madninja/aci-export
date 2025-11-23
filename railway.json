@@ -6,7 +6,7 @@
   },
   "deploy": {
     "cronSchedule": "0 5 * * *",
-    "startCommand": "./target/release/sync-cli",
+    "startCommand": "./target/release/sync-cli run",
     "restartPolicyType": "NEVER"
   }
 }

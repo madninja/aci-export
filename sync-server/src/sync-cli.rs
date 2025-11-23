@@ -31,6 +31,36 @@ impl Cli {
 pub enum Cmd {
     Mail(mail::Cmd),
     App(app::Cmd),
+    Run(Run),
+}
+
+/// Run both mail and app sync concurrently
+#[derive(Debug, clap::Args)]
+pub struct Run {}
+
+impl Run {
+    async fn run(&self, settings: Settings) -> Result {
+        use serde_json::json;
+
+        let mail_settings = settings.clone();
+        let app_settings = settings.clone();
+
+        let (mail_stats, app_stats) = tokio::try_join!(
+            async {
+                let db = mail_settings.mail.db.connect().await?;
+                let jobs = sync_server::cron::mailchimp::Job::all(&db).await?;
+                sync_server::cron::mailchimp::Job::sync_many(jobs, mail_settings.ddb).await
+            },
+            async { sync_server::cron::db::run(&app_settings.app, &app_settings.ddb).await }
+        )?;
+
+        let combined = json!({
+            "mail": mail_stats,
+            "app": app_stats,
+        });
+
+        cmd::print_json(&combined)
+    }
 }
 
 impl Cmd {
@@ -38,6 +68,7 @@ impl Cmd {
         match self {
             Self::Mail(cmd) => cmd.run(settings).await,
             Self::App(cmd) => cmd.run(settings).await,
+            Self::Run(cmd) => cmd.run(settings).await,
         }
     }
 }

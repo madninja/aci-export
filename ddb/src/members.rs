@@ -638,10 +638,10 @@ pub mod mailchimp {
                         tag_updates.clone(),
                     ));
                 }
-                if let Some(partner) = &member.partner {
-                    if mc::members::is_valid_email(&partner.email) {
-                        updates.push((mc::members::member_id(&partner.email), tag_updates));
-                    }
+                if let Some(partner) = &member.partner
+                    && mc::members::is_valid_email(&partner.email)
+                {
+                    updates.push((mc::members::member_id(&partner.email), tag_updates));
                 }
                 updates
             })
