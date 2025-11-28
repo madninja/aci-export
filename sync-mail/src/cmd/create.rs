@@ -1,4 +1,4 @@
-use crate::{cmd::print_json, mailchimp::Job, settings::Settings, Result};
+use crate::{Result, cmd::print_json, mailchimp::Job, settings::Settings};
 
 /// Create a new sync job
 #[derive(Debug, clap::Args)]

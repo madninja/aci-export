@@ -1,10 +1,10 @@
 use crate::{
-    batches, deserialize_null_string, lists, paged_query_impl, paged_response_impl,
-    query_default_impl, Client, Error, Result, RetryPolicy, Stream, DEFAULT_QUERY_COUNT, NO_QUERY,
+    Client, DEFAULT_QUERY_COUNT, Error, NO_QUERY, Result, RetryPolicy, Stream, batches,
+    deserialize_null_string, lists, paged_query_impl, paged_response_impl, query_default_impl,
 };
 use futures::{
-    stream::{self, Stream as StdStream, StreamExt, TryStreamExt},
     TryFutureExt,
+    stream::{self, Stream as StdStream, StreamExt, TryStreamExt},
 };
 use serde::{Deserialize, Serialize};
 use std::{

@@ -1,40 +1,31 @@
-use crate::{Error, Result};
+use crate::{DB_DELETE_CHUNK_SIZE, Error, Result};
 use futures::TryFutureExt;
-use sqlx::{PgExecutor, Postgres};
+use sqlx::{PgPool, Postgres};
 
-pub async fn all<'c, E>(exec: E) -> Result<Vec<Club>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn all(pool: &PgPool) -> Result<Vec<Club>> {
     sqlx::query_as::<_, Club>(FETCH_CLUBS_QUERY)
-        .fetch_all(exec)
+        .fetch_all(pool)
         .map_err(Error::from)
         .await
 }
 
-pub async fn by_uid<'c, E>(exec: E, uid: i64) -> Result<Option<Club>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn by_uid(pool: &PgPool, uid: i64) -> Result<Option<Club>> {
     let club = fetch_clubs_query()
         .push("where uid = ")
         .push_bind(uid)
         .build_query_as::<Club>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(club)
 }
 
-pub async fn by_number<'c, E>(exec: E, number: i32) -> Result<Option<Club>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn by_number(pool: &PgPool, number: i32) -> Result<Option<Club>> {
     let club = fetch_clubs_query()
         .push("where number = ")
         .push_bind(number)
         .build_query_as::<Club>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(club)
@@ -65,10 +56,7 @@ pub struct Club {
     pub region: Option<i64>,
 }
 
-pub async fn upsert_many<'c, E>(exec: E, clubs: &[Club]) -> Result<u64>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn upsert_many(pool: &PgPool, clubs: &[Club]) -> Result<u64> {
     if clubs.is_empty() {
         return Ok(0);
     }
@@ -80,31 +68,35 @@ where
                 .push_bind(club.region);
         })
         .push(
-            r#"ON CONFLICT(number) DO UPDATE SET
+            r#"ON CONFLICT(uid) DO UPDATE SET
                 name = excluded.name,
-                uid = excluded.uid,
+                number = excluded.number,
                 region = excluded.region
             "#,
         )
         .build()
-        .execute(exec)
+        .execute(pool)
         .await?;
     Ok(result.rows_affected())
 }
 
-pub async fn retain<'c, E>(exec: E, clubs: &[Club]) -> Result<u64>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn retain(pool: &PgPool, clubs: &[Club]) -> Result<u64> {
     if clubs.is_empty() {
         return Ok(0);
     }
-    let mut builder = sqlx::QueryBuilder::new(r#" DELETE FROM clubs WHERE uid NOT IN ("#);
-    let mut seperated = builder.separated(", ");
-    for region in clubs {
-        seperated.push_bind(region.uid);
+    let uids: Vec<i64> = clubs.iter().map(|club| club.uid).collect();
+    let mut tx = pool.begin().await?;
+    let mut total_affected = 0;
+    for chunk in uids.chunks(DB_DELETE_CHUNK_SIZE) {
+        let mut builder = sqlx::QueryBuilder::new(r#" DELETE FROM clubs WHERE uid NOT IN ("#);
+        let mut seperated = builder.separated(", ");
+        for uid in chunk {
+            seperated.push_bind(uid);
+        }
+        seperated.push_unseparated(") ");
+        let result = builder.build().execute(&mut *tx).await?;
+        total_affected += result.rows_affected();
     }
-    seperated.push_unseparated(") ");
-    let result = builder.build().execute(exec).await?;
-    Ok(result.rows_affected())
+    tx.commit().await?;
+    Ok(total_affected)
 }

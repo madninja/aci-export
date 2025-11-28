@@ -1,4 +1,4 @@
-use super::{client_from_env, print_json, Result};
+use super::{Result, client_from_env, print_json};
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}

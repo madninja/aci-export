@@ -1,5 +1,5 @@
 use clap::Parser;
-use sync_mail::{cmd::Cmd, settings::Settings, Result};
+use sync_mail::{Result, cmd::Cmd, settings::Settings};
 
 #[derive(Debug, Parser)]
 #[command(name = "sync-mail")]

@@ -1,5 +1,5 @@
 use clap::Parser;
-use sync_app::{cmd::Cmd, settings::Settings, Result};
+use sync_app::{Result, cmd::Cmd, settings::Settings};
 
 #[derive(Debug, Parser)]
 #[command(name = "sync-app")]

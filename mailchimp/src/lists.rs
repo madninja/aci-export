@@ -1,6 +1,6 @@
 use crate::{
-    deserialize_null_string, paged_query_impl, paged_response_impl, query_default_impl,
-    read_config, Client, Result, Stream,
+    Client, Result, Stream, deserialize_null_string, paged_query_impl, paged_response_impl,
+    query_default_impl, read_config,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

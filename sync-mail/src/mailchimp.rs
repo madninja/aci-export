@@ -1,8 +1,8 @@
-use crate::{settings::AciDatabaseSettings, Error, Result};
+use crate::{Error, Result, settings::AciDatabaseSettings};
 use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
 use mailchimp::RetryPolicy;
-use sqlx::{query::QueryAs, Database, Encode, Type};
+use sqlx::{Database, Encode, MySqlPool, PgPool, Type, query::QueryAs};
 use std::time::Instant;
 
 #[derive(Debug, serde::Serialize)]
@@ -99,20 +99,14 @@ impl JobUpdate {
 }
 
 impl Job {
-    pub async fn all<'c, E>(db: E) -> Result<Vec<Self>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
+    pub async fn all(db: &PgPool) -> Result<Vec<Self>> {
         sqlx::query_as("select id, name, api_key, list, club, region, created_at from mailchimp")
             .fetch_all(db)
             .map_err(Error::from)
             .await
     }
 
-    pub async fn get<'c, E>(db: E, job_id: i64) -> Result<Option<Self>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
+    pub async fn get(db: &PgPool, job_id: i64) -> Result<Option<Self>> {
         sqlx::query_as(
             r#"select id, name, api_key, list, club, region, created_at from mailchimp where id = $1;"#,
         )
@@ -122,10 +116,7 @@ impl Job {
         .await
     }
 
-    pub async fn create<'c, E>(db: E, job: &Self) -> Result<Self>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
+    pub async fn create(db: &PgPool, job: &Self) -> Result<Self> {
         sqlx::query_as(
             r#"
             insert into mailchimp (name, api_key, list, club, region)
@@ -143,10 +134,7 @@ impl Job {
         .await
     }
 
-    pub async fn update<'c, E>(db: E, update: &JobUpdate) -> Result<Self>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
+    pub async fn update(db: &PgPool, update: &JobUpdate) -> Result<Self> {
         let setters = update.setters().join(",");
         if setters.is_empty() {
             return Self::get(db, update.id)
@@ -165,10 +153,7 @@ impl Job {
         update.binds(query).fetch_one(db).map_err(Error::from).await
     }
 
-    pub async fn delete<'c, E>(db: E, id: i64) -> Result<()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
+    pub async fn delete(db: &PgPool, id: i64) -> Result<()> {
         sqlx::query(r#"delete from mailchimp where id = $1"#)
             .bind(id)
             .execute(db)
@@ -180,10 +165,7 @@ impl Job {
         Ok(mailchimp::client::from_api_key(&self.api_key)?)
     }
 
-    async fn db_members<'c, E>(&self, db: E) -> Result<Vec<ddb::members::Member>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::MySql>,
-    {
+    async fn db_members(&self, db: &MySqlPool) -> Result<Vec<ddb::members::Member>> {
         let db_members = if let Some(club) = self.club {
             ddb::members::by_club(db, club as u64).await?
         } else if let Some(region) = self.region {
@@ -227,18 +209,16 @@ impl Job {
                 let ddb_settings = ddb_settings.clone();
                 async move {
                     let name = job.name.clone();
-                    job.sync(ddb_settings)
-                        .await
-                        .map(|(deleted, upserted)| {
-                            (
-                                job.id,
-                                JobSyncResult {
-                                    name,
-                                    deleted,
-                                    upserted,
-                                },
-                            )
-                        })
+                    job.sync(ddb_settings).await.map(|(deleted, upserted)| {
+                        (
+                            job.id,
+                            JobSyncResult {
+                                name,
+                                deleted,
+                                upserted,
+                            },
+                        )
+                    })
                 }
             })
             .buffered(20)

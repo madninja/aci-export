@@ -1,45 +1,36 @@
-use crate::{clubs, clubs::Club, users::User, Result};
+use crate::{Result, clubs, clubs::Club, users::User};
 use itertools::Itertools;
-use sqlx::{MySql, MySqlExecutor};
+use sqlx::{MySql, MySqlPool};
 use std::{collections::HashMap, fmt};
 
-pub async fn all<'c, E>(exec: E) -> Result<Vec<Member>>
-where
-    E: sqlx::MySqlExecutor<'c>,
-{
+pub async fn all(pool: &MySqlPool) -> Result<Vec<Member>> {
     let all = fetch_members_query()
         .push(" AND paragraphs_item_field_data.parent_field_name = 'field_home_club'")
         .build_query_as::<Member>()
-        .fetch_all(exec)
+        .fetch_all(pool)
         .await?;
     Ok(dedupe_members(all))
 }
 
-pub async fn by_club<'c, E>(exec: E, uid: u64) -> Result<Vec<Member>>
-where
-    E: MySqlExecutor<'c>,
-{
+pub async fn by_club(pool: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
     let all = fetch_club_members_query()
         .build_query_as::<Member>()
         .bind(Some(uid))
         .bind(Some(uid))
         .bind(None::<u64>)
-        .fetch_all(exec)
+        .fetch_all(pool)
         .await?;
 
     Ok(dedupe_members(all))
 }
 
-pub async fn by_region<'c, E>(exec: E, uid: u64) -> Result<Vec<Member>>
-where
-    E: MySqlExecutor<'c>,
-{
+pub async fn by_region(pool: &MySqlPool, uid: u64) -> Result<Vec<Member>> {
     let all = fetch_club_members_query()
         .build_query_as::<Member>()
         .bind(None::<u64>)
         .bind(None::<u64>)
         .bind(Some(uid))
-        .fetch_all(exec)
+        .fetch_all(pool)
         .await?;
 
     Ok(dedupe_members(all))
@@ -62,30 +53,24 @@ pub fn dedupe_members(members: Vec<Member>) -> Vec<Member> {
     member_map.into_values().collect()
 }
 
-pub async fn by_uid<'c, E>(exec: E, uid: u64) -> Result<Option<Member>>
-where
-    E: MySqlExecutor<'c>,
-{
+pub async fn by_uid(pool: &MySqlPool, uid: u64) -> Result<Option<Member>> {
     let member = fetch_members_query()
         .push("AND paragraphs_item_field_data.parent_field_name = 'field_home_club'")
         .push("AND users_field_data.uid = ")
         .push_bind(uid)
         .build_query_as::<Member>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(member)
 }
 
-pub async fn by_email<'c, E>(exec: E, email: &str) -> Result<Option<Member>>
-where
-    E: MySqlExecutor<'c>,
-{
+pub async fn by_email(pool: &MySqlPool, email: &str) -> Result<Option<Member>> {
     let member = fetch_members_query()
         .push("AND users_field_data.mail = ")
         .push_bind(email)
         .build_query_as::<Member>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(member)
@@ -334,26 +319,20 @@ fn fetch_club_members_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
 pub mod mailing_address {
     use super::*;
 
-    pub async fn by_uid<'c, E>(exec: E, uid: u64) -> Result<Option<Address>>
-    where
-        E: MySqlExecutor<'c>,
-    {
+    pub async fn by_uid(pool: &MySqlPool, uid: u64) -> Result<Option<Address>> {
         let member = fetch_mailing_address_query()
             .push("AND user__field_address.entity_id = ")
             .push_bind(uid)
             .build_query_as::<Address>()
-            .fetch_optional(exec)
+            .fetch_optional(pool)
             .await?;
         Ok(member)
     }
 
-    pub async fn by_uids<'c, I: IntoIterator<Item = u64>, E>(
-        exec: E,
+    pub async fn by_uids<I: IntoIterator<Item = u64>>(
+        pool: &MySqlPool,
         uids: I,
-    ) -> Result<HashMap<u64, Address>>
-    where
-        E: MySqlExecutor<'c>,
-    {
+    ) -> Result<HashMap<u64, Address>> {
         let mut builder = fetch_mailing_address_query();
         let mut seperated = builder
             .push("AND user__field_address.entity_id IN (")
@@ -364,7 +343,7 @@ pub mod mailing_address {
         seperated.push_unseparated(") ");
         let members: HashMap<u64, Address> = builder
             .build_query_as::<Address>()
-            .fetch_all(exec)
+            .fetch_all(pool)
             .await?
             .into_iter()
             .filter_map(|address| address.user_id.map(|user_id| (user_id, address)))
@@ -373,23 +352,17 @@ pub mod mailing_address {
     }
 
     /// Get addresses for given members primary user ids
-    pub async fn for_members<'c, E>(
-        exec: E,
+    pub async fn for_members(
+        pool: &MySqlPool,
         members: impl IntoIterator<Item = &Member>,
-    ) -> Result<HashMap<u64, Address>>
-    where
-        E: MySqlExecutor<'c>,
-    {
-        by_uids(exec, members.into_iter().map(|member| member.primary.uid)).await
+    ) -> Result<HashMap<u64, Address>> {
+        by_uids(pool, members.into_iter().map(|member| member.primary.uid)).await
     }
 
-    pub async fn all<'c, E>(exec: E) -> Result<Vec<Address>>
-    where
-        E: MySqlExecutor<'c>,
-    {
+    pub async fn all(pool: &MySqlPool) -> Result<Vec<Address>> {
         let members = fetch_mailing_address_query()
             .build_query_as::<Address>()
-            .fetch_all(exec)
+            .fetch_all(pool)
             .await?;
         Ok(members)
     }

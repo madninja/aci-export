@@ -10,3 +10,4 @@ pub mod region;
 pub mod user;
 
 pub(crate) const DB_INSERT_CHUNK_SIZE: usize = 1000;
+pub(crate) const DB_DELETE_CHUNK_SIZE: usize = 1000;

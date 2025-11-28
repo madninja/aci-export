@@ -1,40 +1,31 @@
 use crate::{Error, Result};
 use futures::TryFutureExt;
-use sqlx::{MySql, MySqlExecutor};
+use sqlx::{MySql, MySqlPool};
 
-pub async fn all<'c, E>(exec: E) -> Result<Vec<Club>>
-where
-    E: MySqlExecutor<'c>,
-{
+pub async fn all(pool: &MySqlPool) -> Result<Vec<Club>> {
     sqlx::query_as::<_, Club>(FETCH_CLUBS_QUERY)
-        .fetch_all(exec)
+        .fetch_all(pool)
         .map_err(Error::from)
         .await
 }
 
-pub async fn by_uid<'c, E>(exec: E, uid: u64) -> Result<Option<Club>>
-where
-    E: MySqlExecutor<'c>,
-{
+pub async fn by_uid(pool: &MySqlPool, uid: u64) -> Result<Option<Club>> {
     let club = fetch_clubs_query()
         .push("where field_club_target_id = ")
         .push_bind(uid)
         .build_query_as::<Club>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(club)
 }
 
-pub async fn by_number<'c, E>(exec: E, number: i32) -> Result<Option<Club>>
-where
-    E: MySqlExecutor<'c>,
-{
+pub async fn by_number(pool: &MySqlPool, number: i32) -> Result<Option<Club>> {
     let club = fetch_clubs_query()
         .push("where cn.field_club_number_value = ")
         .push_bind(number)
         .build_query_as::<Club>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(club)

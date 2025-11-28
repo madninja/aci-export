@@ -1,4 +1,4 @@
-use super::{client_from_env, print_json, Result};
+use super::{Result, client_from_env, print_json};
 
 /// Commands on the members of an audience list.
 #[derive(Debug, clap::Args)]
@@ -49,7 +49,8 @@ impl List {
             let member = mailchimp::members::for_email(&client, &self.list, email).await?;
             print_json(&member)
         } else {
-            let lists = mailchimp::members::all_collect(&client, &self.list, Default::default()).await?;
+            let lists =
+                mailchimp::members::all_collect(&client, &self.list, Default::default()).await?;
             print_json(&lists)
         }
     }

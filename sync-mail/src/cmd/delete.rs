@@ -1,4 +1,4 @@
-use crate::{cmd::print_json, mailchimp::Job, settings::Settings, Result};
+use crate::{Result, cmd::print_json, mailchimp::Job, settings::Settings};
 use serde_json::json;
 
 /// Delete a sync job

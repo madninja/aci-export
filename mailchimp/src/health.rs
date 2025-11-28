@@ -1,4 +1,4 @@
-use crate::{deserialize_null_string, Client, Result, NO_QUERY};
+use crate::{Client, NO_QUERY, Result, deserialize_null_string};
 use serde::{Deserialize, Serialize};
 
 pub async fn ping(client: &Client) -> Result<ApiHealthStatus> {

@@ -1,4 +1,4 @@
-use crate::{settings::Settings, Result};
+use crate::{Result, settings::Settings};
 
 pub mod create;
 pub mod delete;

@@ -1,4 +1,4 @@
-use crate::{cmd::print_json, mailchimp::Job, settings::Settings, Result};
+use crate::{Result, cmd::print_json, mailchimp::Job, settings::Settings};
 
 /// Sync the given club (or all) mailing list from the membership database
 #[derive(Debug, clap::Args)]

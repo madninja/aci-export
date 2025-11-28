@@ -4,11 +4,8 @@ use anyhow::Context;
 use sqlx::{Executor, MySqlPool};
 
 pub async fn connect_from_env() -> Result<MySqlPool> {
-    let url =
-        std::env::var("DDB_DB_URL").context("DDB_DB_URL environment variable not set")?;
-    let pool = MySqlPool::connect(&url)
-        .await
-        .context("opening database")?;
+    let url = std::env::var("DDB_DB_URL").context("DDB_DB_URL environment variable not set")?;
+    let pool = MySqlPool::connect(&url).await.context("opening database")?;
     let _ = pool
         .execute(
             r#"

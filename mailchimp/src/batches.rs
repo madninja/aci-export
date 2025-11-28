@@ -1,5 +1,5 @@
 use crate::{
-    paged_query_impl, paged_response_impl, query_default_impl, Client, Result, Stream, NO_QUERY,
+    Client, NO_QUERY, Result, Stream, paged_query_impl, paged_response_impl, query_default_impl,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

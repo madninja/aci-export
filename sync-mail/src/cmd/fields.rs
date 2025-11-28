@@ -1,4 +1,4 @@
-use crate::{cmd::print_json, mailchimp::Job, settings::Settings, Result};
+use crate::{Result, cmd::print_json, mailchimp::Job, settings::Settings};
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 
 /// Sync the mailing list merge fields for a given club (or all) to mailchimp

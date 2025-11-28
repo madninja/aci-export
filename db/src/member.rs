@@ -1,45 +1,35 @@
 use crate::{
-    club,
+    DB_DELETE_CHUNK_SIZE, DB_INSERT_CHUNK_SIZE, Error, Result, club,
     user::{self, id_for_email},
-    Error, Result, DB_INSERT_CHUNK_SIZE,
 };
-use futures::{stream, StreamExt, TryStreamExt};
-use sqlx::{postgres::PgExecutor, Postgres, QueryBuilder};
+use futures::{StreamExt, TryStreamExt, stream};
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use std::{collections::HashMap, fmt};
 
-pub async fn all<'c, E>(exec: E) -> Result<Vec<Member>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn all(pool: &PgPool) -> Result<Vec<Member>> {
     let all = fetch_members_query()
         .build_query_as::<Member>()
-        .fetch_all(exec)
+        .fetch_all(pool)
         .await?;
     Ok(dedupe_members(all))
 }
 
-pub async fn by_club<'c, E>(exec: E, uid: i64) -> Result<Vec<Member>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn by_club(pool: &PgPool, uid: i64) -> Result<Vec<Member>> {
     let members = fetch_members_query()
         .push("WHERE local_club = ")
         .push_bind(uid)
         .build_query_as::<Member>()
-        .fetch_all(exec)
+        .fetch_all(pool)
         .await?;
     Ok(dedupe_members(members))
 }
 
-pub async fn by_region<'c, E>(exec: E, uid: i64) -> Result<Vec<Member>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn by_region(pool: &PgPool, uid: i64) -> Result<Vec<Member>> {
     let all = fetch_members_query()
         .push("WHERE region.uid = ")
         .push_bind(uid)
         .build_query_as::<Member>()
-        .fetch_all(exec)
+        .fetch_all(pool)
         .await?;
 
     Ok(dedupe_members(all))
@@ -62,29 +52,23 @@ pub fn dedupe_members(members: Vec<Member>) -> Vec<Member> {
     member_map.into_values().collect()
 }
 
-pub async fn by_uid<'c, E>(exec: E, uid: i64) -> Result<Option<Member>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn by_uid(pool: &PgPool, uid: i64) -> Result<Option<Member>> {
     let member = fetch_members_query()
         .push("WHERE primary_user = ")
         .push_bind(uid)
         .build_query_as::<Member>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(member)
 }
 
-pub async fn by_email<'c, E>(exec: E, email: &str) -> Result<Option<Member>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn by_email(pool: &PgPool, email: &str) -> Result<Option<Member>> {
     let member = fetch_members_query()
         .push("WHERE email = ")
         .push_bind(email)
         .build_query_as::<Member>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(member)
@@ -135,10 +119,7 @@ fn fetch_members_query<'builder>() -> sqlx::QueryBuilder<'builder, Postgres> {
     sqlx::QueryBuilder::new(FETCH_MEMBERS_QUERY)
 }
 
-pub async fn upsert_many<'c, E>(exec: E, members: &[Member]) -> Result<u64>
-where
-    E: PgExecutor<'c> + Copy,
-{
+pub async fn upsert_many(pool: &PgPool, members: &[Member]) -> Result<u64> {
     if members.is_empty() {
         return Ok(0);
     }
@@ -178,7 +159,7 @@ where
             "#,
             )
             .build()
-            .execute(exec)
+            .execute(pool)
             .await?;
             Ok::<u64, Error>(result.rows_affected())
         })
@@ -187,46 +168,44 @@ where
     Ok(affected.iter().sum())
 }
 
-pub async fn retain<'c, E>(exec: E, members: &[Member]) -> Result<u64>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn retain(pool: &PgPool, members: &[Member]) -> Result<u64> {
     if members.is_empty() {
         return Ok(0);
     }
-    let mut builder =
-        sqlx::QueryBuilder::new(r#" DELETE FROM members WHERE primary_user NOT IN ("#);
-    let mut seperated = builder.separated(", ");
-    for member in members {
-        seperated.push_bind(&member.primary.id);
+    let ids: Vec<&String> = members.iter().map(|member| &member.primary.id).collect();
+    let mut tx = pool.begin().await?;
+    let mut total_affected = 0;
+    for chunk in ids.chunks(DB_DELETE_CHUNK_SIZE) {
+        let mut builder =
+            sqlx::QueryBuilder::new(r#" DELETE FROM members WHERE primary_user NOT IN ("#);
+        let mut seperated = builder.separated(", ");
+        for id in chunk {
+            seperated.push_bind(id);
+        }
+        seperated.push_unseparated(") ");
+        let result = builder.build().execute(&mut *tx).await?;
+        total_affected += result.rows_affected();
     }
-    seperated.push_unseparated(") ");
-    let result = builder.build().execute(exec).await?;
-    Ok(result.rows_affected())
+    tx.commit().await?;
+    Ok(total_affected)
 }
 pub mod mailing_address {
     use super::*;
 
-    pub async fn by_uid<'c, E>(exec: E, uid: i64) -> Result<Option<Address>>
-    where
-        E: PgExecutor<'c>,
-    {
+    pub async fn by_uid(pool: &PgPool, uid: i64) -> Result<Option<Address>> {
         let member = fetch_mailing_address_query()
             .push("WHERE user = ")
             .push_bind(uid)
             .build_query_as::<Address>()
-            .fetch_optional(exec)
+            .fetch_optional(pool)
             .await?;
         Ok(member)
     }
 
-    pub async fn by_uids<'c, I: IntoIterator<Item = i64>, E>(
-        exec: E,
+    pub async fn by_uids<I: IntoIterator<Item = i64>>(
+        pool: &PgPool,
         uids: I,
-    ) -> Result<HashMap<i64, Address>>
-    where
-        E: PgExecutor<'c>,
-    {
+    ) -> Result<HashMap<i64, Address>> {
         let mut builder = fetch_mailing_address_query();
         let mut seperated = builder.push("AND user IN (").separated(", ");
         for value in uids {
@@ -235,7 +214,7 @@ pub mod mailing_address {
         seperated.push_unseparated(") ");
         let members: HashMap<i64, Address> = builder
             .build_query_as::<Address>()
-            .fetch_all(exec)
+            .fetch_all(pool)
             .await?
             .into_iter()
             .filter_map(|address| address.user_id.map(|user_id| (user_id, address)))
@@ -244,23 +223,17 @@ pub mod mailing_address {
     }
 
     /// Get addresses for given members primary user ids
-    pub async fn for_members<'c, E>(
-        exec: E,
+    pub async fn for_members(
+        pool: &PgPool,
         members: impl IntoIterator<Item = &Member>,
-    ) -> Result<HashMap<i64, Address>>
-    where
-        E: PgExecutor<'c>,
-    {
-        by_uids(exec, members.into_iter().map(|member| member.primary.uid)).await
+    ) -> Result<HashMap<i64, Address>> {
+        by_uids(pool, members.into_iter().map(|member| member.primary.uid)).await
     }
 
-    pub async fn all<'c, E>(exec: E) -> Result<Vec<Address>>
-    where
-        E: PgExecutor<'c>,
-    {
+    pub async fn all(pool: &PgPool) -> Result<Vec<Address>> {
         let members = fetch_mailing_address_query()
             .build_query_as::<Address>()
-            .fetch_all(exec)
+            .fetch_all(pool)
             .await?;
         Ok(members)
     }

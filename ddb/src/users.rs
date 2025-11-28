@@ -1,5 +1,5 @@
 use crate::Result;
-use sqlx::{mysql::MySql, MySqlExecutor};
+use sqlx::{MySqlPool, mysql::MySql};
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize, Clone)]
 pub struct User {
@@ -37,29 +37,23 @@ fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
     )
 }
 
-pub async fn by_uid<'c, E>(exec: E, uid: u64) -> Result<Option<User>>
-where
-    E: MySqlExecutor<'c>,
-{
+pub async fn by_uid(pool: &MySqlPool, uid: u64) -> Result<Option<User>> {
     let user = fetch_user_query()
         .push("users_field_data.uid = ")
         .push_bind(uid)
         .build_query_as::<User>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(user)
 }
 
-pub async fn by_email<'c, E>(exec: E, email: &str) -> Result<Option<User>>
-where
-    E: MySqlExecutor<'c>,
-{
+pub async fn by_email(pool: &MySqlPool, email: &str) -> Result<Option<User>> {
     let user = fetch_user_query()
         .push("users_field_data.mail = ")
         .push_bind(email)
         .build_query_as::<User>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(user)

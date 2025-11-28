@@ -1,6 +1,6 @@
 use crate::{
-    deserialize_null_string, error::Error, paged_query_impl, paged_response_impl,
-    query_default_impl, read_config, Client, Result, Stream, NO_QUERY,
+    Client, NO_QUERY, Result, Stream, deserialize_null_string, error::Error, paged_query_impl,
+    paged_response_impl, query_default_impl, read_config,
 };
 use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};

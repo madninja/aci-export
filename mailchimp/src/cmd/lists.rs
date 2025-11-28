@@ -1,4 +1,4 @@
-use super::{client_from_env, print_json, Result};
+use super::{Result, client_from_env, print_json};
 use futures::TryStreamExt;
 
 /// Commands on audience lists.
@@ -135,4 +135,3 @@ impl Update {
         print_json(&updated)
     }
 }
-

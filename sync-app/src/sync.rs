@@ -1,11 +1,11 @@
 use crate::{
-    settings::{AciDatabaseSettings, AppSettings},
     Result,
+    settings::{AciDatabaseSettings, AppSettings},
 };
 use db::{address, brn, club, member, region, user};
 use itertools::Itertools;
 use serde::Serialize;
-use sqlx::PgExecutor;
+use sqlx::PgPool;
 use std::{collections::HashMap, time::Instant};
 
 #[derive(Debug, Serialize)]
@@ -27,12 +27,11 @@ impl SyncStats {
 
 pub type SyncStatsMap = std::collections::HashMap<String, SyncStats>;
 
-pub async fn upsert_regions<'c, DB, I>(
-    db: DB,
+pub async fn upsert_regions<I>(
+    db: &PgPool,
     regions: I,
 ) -> Result<((String, SyncStats), Vec<region::Region>)>
 where
-    DB: PgExecutor<'c> + Copy,
     I: IntoIterator<Item = ddb::regions::Region>,
 {
     let start = Instant::now();
@@ -46,14 +45,11 @@ where
     ))
 }
 
-pub async fn retain_regions<'c, DB>(
-    db: DB,
+pub async fn retain_regions(
+    db: &PgPool,
     stats: &mut (String, SyncStats),
     db_regions: &[region::Region],
-) -> Result<()>
-where
-    DB: PgExecutor<'c> + Copy,
-{
+) -> Result<()> {
     let start = Instant::now();
     let deleted = region::retain(db, db_regions).await?;
     let duration = start.elapsed().as_secs();
@@ -63,12 +59,11 @@ where
     Ok(())
 }
 
-pub async fn upsert_clubs<'c, DB, I>(
-    db: DB,
+pub async fn upsert_clubs<I>(
+    db: &PgPool,
     clubs: I,
 ) -> Result<((String, SyncStats), Vec<club::Club>)>
 where
-    DB: PgExecutor<'c> + Copy,
     I: IntoIterator<Item = ddb::clubs::Club>,
 {
     let start = Instant::now();
@@ -82,14 +77,11 @@ where
     ))
 }
 
-pub async fn retain_clubs<'c, DB>(
-    db: DB,
+pub async fn retain_clubs(
+    db: &PgPool,
     stats: &mut (String, SyncStats),
     db_clubs: &[club::Club],
-) -> Result<()>
-where
-    DB: PgExecutor<'c> + Copy,
-{
+) -> Result<()> {
     let start = Instant::now();
     let deleted = club::retain(db, db_clubs).await?;
     let duration = start.elapsed().as_secs();
@@ -99,12 +91,11 @@ where
     Ok(())
 }
 
-pub async fn upsert_users<'c, DB, I>(
-    db: DB,
+pub async fn upsert_users<I>(
+    db: &PgPool,
     users: I,
 ) -> Result<((String, SyncStats), Vec<user::User>)>
 where
-    DB: PgExecutor<'c> + Copy,
     I: IntoIterator<Item = ddb::users::User>,
 {
     let start = Instant::now();
@@ -118,14 +109,11 @@ where
     ))
 }
 
-pub async fn retain_users<'c, DB>(
-    db: DB,
+pub async fn retain_users(
+    db: &PgPool,
     stats: &mut (String, SyncStats),
     db_users: &[user::User],
-) -> Result<()>
-where
-    DB: PgExecutor<'c> + Copy,
-{
+) -> Result<()> {
     let start = Instant::now();
     let deleted = user::retain(db, db_users).await?;
     let duration = start.elapsed().as_secs();
@@ -135,12 +123,11 @@ where
     Ok(())
 }
 
-pub async fn upsert_members<'c, DB, I>(
-    db: DB,
+pub async fn upsert_members<I>(
+    db: &PgPool,
     members: I,
 ) -> Result<((String, SyncStats), Vec<member::Member>)>
 where
-    DB: PgExecutor<'c> + Copy,
     I: IntoIterator<Item = ddb::members::Member>,
 {
     let start = Instant::now();
@@ -154,14 +141,11 @@ where
     ))
 }
 
-pub async fn retain_members<'c, DB>(
-    db: DB,
+pub async fn retain_members(
+    db: &PgPool,
     stats: &mut (String, SyncStats),
     db_members: &[member::Member],
-) -> Result<()>
-where
-    DB: PgExecutor<'c> + Copy,
-{
+) -> Result<()> {
     let start = Instant::now();
     let deleted = member::retain(db, db_members).await?;
     let duration = start.elapsed().as_secs();
@@ -171,14 +155,11 @@ where
     Ok(())
 }
 
-pub async fn upsert_addresses<'c, DB>(
-    db: DB,
+pub async fn upsert_addresses(
+    db: &PgPool,
     ddb_members: &[ddb::members::Member],
     ddb_addresses: &mut HashMap<u64, ddb::members::Address>,
-) -> Result<((String, SyncStats), Vec<address::Address>)>
-where
-    DB: PgExecutor<'c> + Copy,
-{
+) -> Result<((String, SyncStats), Vec<address::Address>)> {
     let start = Instant::now();
     let db_addresses = ddb_members
         .iter()
@@ -198,14 +179,11 @@ where
     ))
 }
 
-pub async fn retain_addresses<'c, DB>(
-    db: DB,
+pub async fn retain_addresses(
+    db: &PgPool,
     stats: &mut (String, SyncStats),
     db_addresses: &[address::Address],
-) -> Result<()>
-where
-    DB: PgExecutor<'c> + Copy,
-{
+) -> Result<()> {
     let start = Instant::now();
     let deleted = address::retain(db, db_addresses).await?;
     let duration = start.elapsed().as_secs();
@@ -215,13 +193,10 @@ where
     Ok(())
 }
 
-pub async fn upsert_brns<'c, DB>(
-    db: DB,
+pub async fn upsert_brns(
+    db: &PgPool,
     db_brns: &[brn::Brn],
-) -> Result<((String, SyncStats), Vec<brn::Brn>)>
-where
-    DB: PgExecutor<'c> + Copy,
-{
+) -> Result<((String, SyncStats), Vec<brn::Brn>)> {
     let start = Instant::now();
     let upserted = brn::upsert_many(db, db_brns).await?;
     let duration = start.elapsed().as_secs();
@@ -232,14 +207,11 @@ where
     ))
 }
 
-pub async fn retain_brns<'c, DB>(
-    db: DB,
+pub async fn retain_brns(
+    db: &PgPool,
     stats: &mut (String, SyncStats),
     db_brns: &[brn::Brn],
-) -> Result<()>
-where
-    DB: PgExecutor<'c> + Copy,
-{
+) -> Result<()> {
     let start = Instant::now();
     let deleted = brn::retain(db, db_brns).await?;
     let duration = start.elapsed().as_secs();

@@ -4,11 +4,9 @@ use anyhow::Context;
 use sqlx::PgPool;
 
 pub async fn connect_from_env() -> Result<PgPool> {
-    let url = std::env::var("ACI__APP_DB_URL")
-        .context("ACI__APP_DB_URL environment variable not set")?;
-    let pool = PgPool::connect(&url)
-        .await
-        .context("opening database")?;
+    let url =
+        std::env::var("ACI__APP_DB_URL").context("ACI__APP_DB_URL environment variable not set")?;
+    let pool = PgPool::connect(&url).await.context("opening database")?;
     Ok(pool)
 }
 

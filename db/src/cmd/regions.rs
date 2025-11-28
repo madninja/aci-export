@@ -1,4 +1,4 @@
-use super::{connect_from_env, print_json, Result};
+use super::{Result, connect_from_env, print_json};
 use db::region;
 
 #[derive(Debug, clap::Args)]

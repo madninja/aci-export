@@ -1,11 +1,11 @@
 use futures::{
-    future, stream, Future as StdFuture, FutureExt, Stream as StdStream, StreamExt, TryFutureExt,
+    Future as StdFuture, FutureExt, Stream as StdStream, StreamExt, TryFutureExt, future, stream,
 };
 use reqwest::{
-    header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
     Method, RequestBuilder, Url,
+    header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue},
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{fmt::Debug, pin::Pin, str::FromStr, time::Duration};
 use tokio_retry2::strategy::jitter;
 

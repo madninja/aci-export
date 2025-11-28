@@ -1,4 +1,4 @@
-use crate::{cmd::print_json, settings::Settings, sync, Result};
+use crate::{Result, cmd::print_json, settings::Settings, sync};
 
 /// Run the app database sync from the membership database
 #[derive(Debug, clap::Args)]

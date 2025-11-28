@@ -1,6 +1,6 @@
-use crate::{Error, Result, DB_INSERT_CHUNK_SIZE};
-use futures::{stream, StreamExt, TryStreamExt};
-use sqlx::{postgres::PgExecutor, Postgres};
+use crate::{DB_DELETE_CHUNK_SIZE, DB_INSERT_CHUNK_SIZE, Error, Result};
+use futures::{StreamExt, TryStreamExt, stream};
+use sqlx::{PgPool, Postgres};
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 pub struct User {
@@ -46,37 +46,29 @@ pub fn id_for_email(email: &str) -> String {
     BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(email.trim().to_lowercase()))
 }
 
-pub async fn by_uid<'c, E>(exec: E, uid: i64) -> Result<Option<User>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn by_uid(pool: &PgPool, uid: i64) -> Result<Option<User>> {
     let user = fetch_user_query()
         .push("WHERE uid = ")
         .push_bind(uid)
         .build_query_as::<User>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(user)
 }
 
-pub async fn by_email<'c, E>(exec: E, email: &str) -> Result<Option<User>>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn by_email(pool: &PgPool, email: &str) -> Result<Option<User>> {
     let user = fetch_user_query()
         .push("WHERE id = ")
         .push_bind(id_for_email(email))
         .build_query_as::<User>()
-        .fetch_optional(exec)
+        .fetch_optional(pool)
         .await?;
 
     Ok(user)
 }
-pub async fn upsert_many<'c, E>(exec: E, users: &[User]) -> Result<u64>
-where
-    E: PgExecutor<'c> + Copy,
-{
+
+pub async fn upsert_many(pool: &PgPool, users: &[User]) -> Result<u64> {
     if users.is_empty() {
         return Ok(0);
     }
@@ -115,7 +107,7 @@ where
             "#,
             )
             .build()
-            .execute(exec)
+            .execute(pool)
             .await?;
             Ok::<u64, Error>(result.rows_affected())
         })
@@ -124,19 +116,23 @@ where
     Ok(affected.iter().sum())
 }
 
-pub async fn retain<'c, E>(exec: E, users: &[User]) -> Result<u64>
-where
-    E: PgExecutor<'c>,
-{
+pub async fn retain(pool: &PgPool, users: &[User]) -> Result<u64> {
     if users.is_empty() {
         return Ok(0);
     }
-    let mut builder = sqlx::QueryBuilder::new(r#" DELETE FROM users WHERE id NOT IN ("#);
-    let mut seperated = builder.separated(", ");
-    for user in users {
-        seperated.push_bind(&user.id);
+    let ids: Vec<&String> = users.iter().map(|user| &user.id).collect();
+    let mut tx = pool.begin().await?;
+    let mut total_affected = 0;
+    for chunk in ids.chunks(DB_DELETE_CHUNK_SIZE) {
+        let mut builder = sqlx::QueryBuilder::new(r#" DELETE FROM users WHERE id NOT IN ("#);
+        let mut seperated = builder.separated(", ");
+        for id in chunk {
+            seperated.push_bind(id);
+        }
+        seperated.push_unseparated(") ");
+        let result = builder.build().execute(&mut *tx).await?;
+        total_affected += result.rows_affected();
     }
-    seperated.push_unseparated(") ");
-    let result = builder.build().execute(exec).await?;
-    Ok(result.rows_affected())
+    tx.commit().await?;
+    Ok(total_affected)
 }

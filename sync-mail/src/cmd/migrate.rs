@@ -1,4 +1,4 @@
-use crate::{settings::Settings, Context, Result};
+use crate::{Context, Result, settings::Settings};
 
 /// Database migration commands
 #[derive(Debug, clap::Args)]
@@ -54,12 +54,11 @@ impl InfoCmd {
         let migrator = sqlx::migrate!();
 
         // Query applied migrations from the database
-        let applied: Vec<(i64, String)> = sqlx::query_as(
-            "SELECT version, description FROM _sqlx_migrations ORDER BY version"
-        )
-        .fetch_all(&db)
-        .await
-        .context("querying applied migrations")?;
+        let applied: Vec<(i64, String)> =
+            sqlx::query_as("SELECT version, description FROM _sqlx_migrations ORDER BY version")
+                .fetch_all(&db)
+                .await
+                .context("querying applied migrations")?;
 
         // Get all available migrations from the migrator
         let available = migrator.migrations;
@@ -96,7 +95,8 @@ struct NewCmd {
 impl NewCmd {
     async fn run(&self) -> Result {
         let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S");
-        let description = self.description
+        let description = self
+            .description
             .replace(' ', "_")
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '_')
