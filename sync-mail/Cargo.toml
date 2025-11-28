@@ -1,0 +1,23 @@
+[package]
+name = "sync-mail"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+chrono.workspace = true
+config.workspace = true
+dotenvy.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+itertools.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+ddb = { package = "aci-ddb", path = "../ddb" }
+mailchimp = { package = "mailchimp", path = "../mailchimp" }
+db = { package = "db", path = "../db" }

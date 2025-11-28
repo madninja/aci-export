@@ -7,31 +7,6 @@ use itertools::Itertools;
 use serde::Serialize;
 use sqlx::PgExecutor;
 use std::{collections::HashMap, time::Instant};
-use tokio_cron_scheduler::{Job, JobScheduler};
-
-pub async fn schedule(
-    app_settings: &AppSettings,
-    ddb_settings: &AciDatabaseSettings,
-    scheduler: &mut JobScheduler,
-) -> Result {
-    let job = Job::new_async("@daily", {
-        let inner_app_settings = app_settings.clone();
-        let inner_ddb_settings = ddb_settings.clone();
-        move |_uuid, _lock| {
-            Box::pin({
-                let app_settings = inner_app_settings.clone();
-                let ddb_settings = inner_ddb_settings.clone();
-                async move {
-                    if let Err(err) = run(&app_settings, &ddb_settings).await {
-                        tracing::error!(?err, "failed to sync db");
-                    }
-                }
-            })
-        }
-    })?;
-    scheduler.add(job).await?;
-    Ok(())
-}
 
 #[derive(Debug, Serialize)]
 pub struct SyncStats {

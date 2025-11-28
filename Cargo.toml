@@ -1,5 +1,5 @@
 [workspace]
-members = ["ddb", "mailchimp", "db", "sync-server"]
+members = ["ddb", "mailchimp", "db", "sync-mail", "sync-app"]
 resolver = "2"
 
 [workspace.package]

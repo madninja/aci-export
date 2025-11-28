@@ -9,17 +9,15 @@ pub struct Settings {
     pub log: String,
     pub ddb: AciDatabaseSettings,
     #[serde(default)]
-    pub mail: MailSettings,
-    #[serde(default)]
     pub app: AppSettings,
 }
+
 impl Settings {
-    /// Settings are loaded from the file in the given path.
+    /// Settings are loaded from environment variables with prefix ACI__
     pub fn new() -> Result<Self> {
         Ok(Config::builder()
-            // Source settings file
             .add_source(
-                Environment::with_prefix("SYNC")
+                Environment::with_prefix("ACI")
                     .separator("_")
                     .prefix_separator("__"),
             )
@@ -29,13 +27,7 @@ impl Settings {
 }
 
 fn default_log() -> String {
-    "sync_server=info,mailchimp=info,db=info".to_string()
-}
-
-#[derive(Debug, Deserialize, Clone, Default)]
-pub struct MailSettings {
-    #[serde(default)]
-    pub db: DatabaseSettings,
+    "sync_app=info,db=info".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]

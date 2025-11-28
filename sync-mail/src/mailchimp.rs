@@ -2,9 +2,8 @@ use crate::{settings::AciDatabaseSettings, Error, Result};
 use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
 use mailchimp::RetryPolicy;
-use sqlx::{query::QueryAs, Database, Encode, PgPool, Type};
+use sqlx::{query::QueryAs, Database, Encode, Type};
 use std::time::Instant;
-use tokio_cron_scheduler::{Job as CronJob, JobScheduler};
 
 #[derive(Debug, serde::Serialize)]
 pub struct JobSyncResult {
@@ -99,44 +98,7 @@ impl JobUpdate {
     }
 }
 
-pub async fn schedule(
-    db: PgPool,
-    ddb_settings: &AciDatabaseSettings,
-    scheduler: &mut JobScheduler,
-) -> Result {
-    let job_descriptors = Job::all(&db).await?;
-    for job in job_descriptors {
-        scheduler.add(job.to_job(ddb_settings.clone())?).await?;
-    }
-    Ok(())
-}
-
 impl Job {
-    fn to_job(&self, ddb_url: AciDatabaseSettings) -> Result<CronJob> {
-        CronJob::new_async("@daily", {
-            let inner = self.clone();
-            move |_uuid, _lock| {
-                Box::pin({
-                    let job = inner.clone();
-                    let job_ddb_url = ddb_url.clone();
-                    let job_name = job.name.clone();
-                    let job_id = job.id;
-                    async move {
-                        if let Err(err) = job.sync(job_ddb_url).await {
-                            tracing::error!(
-                                ?err,
-                                id = job_id,
-                                name = job_name,
-                                "failed to sync mailchimp"
-                            );
-                        }
-                    }
-                })
-            }
-        })
-        .map_err(Error::from)
-    }
-
     pub async fn all<'c, E>(db: E) -> Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -193,7 +155,7 @@ impl Job {
         }
         let query_str = format!(
             r#"
-            update mailchimp set 
+            update mailchimp set
                 {setters}
             where id = $1
             returning *;

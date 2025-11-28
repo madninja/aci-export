@@ -3,9 +3,12 @@ name = "db"
 version = "0.1.2"
 edition.workspace = true
 
+[[bin]]
+name = "aci-db"
+path = "src/main.rs"
+
 [dependencies]
 config = { version = "0", default-features = false, features = ["toml"] }
-tokio-cron-scheduler = "0.13"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio-graceful-shutdown = "0"
 sha2 = "0.10"
@@ -20,3 +23,4 @@ serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 itertools = { workspace = true }
+dotenvy = { workspace = true }
