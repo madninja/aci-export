@@ -1,5 +1,5 @@
 use crate::{
-    DB_DELETE_CHUNK_SIZE, DB_INSERT_CHUNK_SIZE, Error, Result, club,
+    DB_INSERT_CHUNK_SIZE, Error, Result, club, retain_with_keys,
     user::{self, id_for_email},
 };
 use futures::{StreamExt, TryStreamExt, stream};
@@ -169,25 +169,10 @@ pub async fn upsert_many(pool: &PgPool, members: &[Member]) -> Result<u64> {
 }
 
 pub async fn retain(pool: &PgPool, members: &[Member]) -> Result<u64> {
-    if members.is_empty() {
-        return Ok(0);
-    }
-    let ids: Vec<&String> = members.iter().map(|member| &member.primary.id).collect();
-    let mut tx = pool.begin().await?;
-    let mut total_affected = 0;
-    for chunk in ids.chunks(DB_DELETE_CHUNK_SIZE) {
-        let mut builder =
-            sqlx::QueryBuilder::new(r#" DELETE FROM members WHERE primary_user NOT IN ("#);
-        let mut seperated = builder.separated(", ");
-        for id in chunk {
-            seperated.push_bind(id);
-        }
-        seperated.push_unseparated(") ");
-        let result = builder.build().execute(&mut *tx).await?;
-        total_affected += result.rows_affected();
-    }
-    tx.commit().await?;
-    Ok(total_affected)
+    retain_with_keys(pool, "members", "primary_user", members, |member| {
+        member.primary.id.as_str()
+    })
+    .await
 }
 pub mod mailing_address {
     use super::*;

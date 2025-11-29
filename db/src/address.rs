@@ -1,4 +1,4 @@
-use crate::{DB_DELETE_CHUNK_SIZE, DB_INSERT_CHUNK_SIZE, Error, Result, user};
+use crate::{DB_INSERT_CHUNK_SIZE, Error, Result, retain_with_keys, user};
 use futures::{StreamExt, TryStreamExt, stream};
 use sqlx::{PgPool, Postgres};
 
@@ -90,30 +90,8 @@ pub async fn upsert_many(pool: &PgPool, addresses: &[Address]) -> Result<u64> {
 }
 
 pub async fn retain(pool: &PgPool, addresses: &[Address]) -> Result<u64> {
-    if addresses.is_empty() {
-        return Ok(0);
-    }
-
-    let user_ids: Vec<&String> = addresses.iter().map(|a| &a.user_id).collect();
-
-    let mut tx = pool.begin().await?;
-    let mut total_affected = 0;
-
-    for chunk in user_ids.chunks(DB_DELETE_CHUNK_SIZE) {
-        let mut builder =
-            sqlx::QueryBuilder::new(r#" DELETE FROM addresses WHERE user_id NOT IN ("#);
-
-        let mut separated = builder.separated(", ");
-        for user_id in chunk {
-            separated.push_bind(user_id);
-        }
-        separated.push_unseparated(")");
-
-        let result = builder.build().execute(&mut *tx).await?;
-        total_affected += result.rows_affected();
-    }
-
-    tx.commit().await?;
-
-    Ok(total_affected)
+    retain_with_keys(pool, "addresses", "user_id", addresses, |address| {
+        address.user_id.as_str()
+    })
+    .await
 }

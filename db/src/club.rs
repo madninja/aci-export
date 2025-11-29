@@ -1,4 +1,4 @@
-use crate::{DB_DELETE_CHUNK_SIZE, Error, Result};
+use crate::{Error, Result, retain_with_keys};
 use futures::TryFutureExt;
 use sqlx::{PgPool, Postgres};
 
@@ -81,22 +81,5 @@ pub async fn upsert_many(pool: &PgPool, clubs: &[Club]) -> Result<u64> {
 }
 
 pub async fn retain(pool: &PgPool, clubs: &[Club]) -> Result<u64> {
-    if clubs.is_empty() {
-        return Ok(0);
-    }
-    let uids: Vec<i64> = clubs.iter().map(|club| club.uid).collect();
-    let mut tx = pool.begin().await?;
-    let mut total_affected = 0;
-    for chunk in uids.chunks(DB_DELETE_CHUNK_SIZE) {
-        let mut builder = sqlx::QueryBuilder::new(r#" DELETE FROM clubs WHERE uid NOT IN ("#);
-        let mut seperated = builder.separated(", ");
-        for uid in chunk {
-            seperated.push_bind(uid);
-        }
-        seperated.push_unseparated(") ");
-        let result = builder.build().execute(&mut *tx).await?;
-        total_affected += result.rows_affected();
-    }
-    tx.commit().await?;
-    Ok(total_affected)
+    retain_with_keys(pool, "clubs", "uid", clubs, |club| club.uid).await
 }
