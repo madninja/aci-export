@@ -1,4 +1,4 @@
-use crate::{users::User, Error, Result};
+use crate::{Error, Result, users::User};
 use sqlx::{MySql, MySqlPool};
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]

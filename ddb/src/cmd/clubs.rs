@@ -39,12 +39,14 @@ impl Cmd {
     pub async fn run(&self) -> Result {
         match &self.cmd {
             Some(cmd) => cmd.run().await,
-            None => Get {
-                id: self.id,
-                number: self.number,
+            None => {
+                Get {
+                    id: self.id,
+                    number: self.number,
+                }
+                .run()
+                .await
             }
-            .run()
-            .await,
         }
     }
 }
@@ -67,12 +69,14 @@ pub(crate) struct LeadershipCmd {
 impl ClubCmd {
     pub async fn run(&self) -> Result {
         match self {
-            Self::Leadership(args) => Leadership {
-                id: args.id,
-                number: args.number,
+            Self::Leadership(args) => {
+                Leadership {
+                    id: args.id,
+                    number: args.number,
+                }
+                .run()
+                .await
             }
-            .run()
-            .await,
         }
     }
 }
