@@ -400,6 +400,7 @@ pub enum MemberClass {
     #[default]
     Regular,
     Lifetime,
+    Complimentary,
 }
 
 impl fmt::Display for MemberClass {
@@ -407,6 +408,7 @@ impl fmt::Display for MemberClass {
         match self {
             Self::Regular => f.write_str("regular"),
             Self::Lifetime => f.write_str("lifetime"),
+            Self::Complimentary => f.write_str("complimentary"),
         }
     }
 }
@@ -417,6 +419,7 @@ impl TryFrom<String> for MemberClass {
         match value.to_lowercase().as_str() {
             "regular" => Ok(Self::Regular),
             "lifetime" => Ok(Self::Lifetime),
+            "complimentary" => Ok(Self::Complimentary),
             other => Err(sqlx::Error::decode(format!(
                 "unexpected member class {other}"
             ))),
@@ -530,6 +533,7 @@ pub mod db {
             match value {
                 MemberClass::Regular => Self::Regular,
                 MemberClass::Lifetime => Self::Lifetime,
+                MemberClass::Complimentary => Self::Complimentary,
             }
         }
     }
