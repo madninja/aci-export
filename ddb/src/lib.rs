@@ -2,6 +2,7 @@ mod error;
 pub use error::{Error, Result};
 
 pub mod clubs;
+pub mod leadership;
 pub mod members;
 pub mod regions;
 pub mod users;

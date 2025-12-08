@@ -11,7 +11,7 @@ pub async fn all(pool: &MySqlPool) -> Result<Vec<Region>> {
 
 pub async fn by_uid(pool: &MySqlPool, uid: u64) -> Result<Option<Region>> {
     let region = fetch_regions_query()
-        .push("where field_region_target_id = ")
+        .push("where region.entity_id = ")
         .push_bind(uid)
         .build_query_as::<Region>()
         .fetch_optional(pool)
@@ -22,7 +22,7 @@ pub async fn by_uid(pool: &MySqlPool, uid: u64) -> Result<Option<Region>> {
 
 pub async fn by_number(pool: &MySqlPool, number: i32) -> Result<Option<Region>> {
     let region = fetch_regions_query()
-        .push("where rn.field_region_number_value = ")
+        .push("where region.field_region_number_value = ")
         .push_bind(number)
         .build_query_as::<Region>()
         .fetch_optional(pool)

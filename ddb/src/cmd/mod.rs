@@ -4,7 +4,7 @@ use anyhow::Context;
 use sqlx::{Executor, MySqlPool};
 
 pub async fn connect_from_env() -> Result<MySqlPool> {
-    let url = std::env::var("DDB_DB_URL").context("DDB_DB_URL environment variable not set")?;
+    let url = std::env::var("ACI__DDB_URL").context("DDB_DB_URL environment variable not set")?;
     let pool = MySqlPool::connect(&url).await.context("opening database")?;
     let _ = pool
         .execute(
@@ -19,6 +19,7 @@ pub async fn connect_from_env() -> Result<MySqlPool> {
 }
 
 pub mod clubs;
+pub mod international;
 pub mod members;
 pub mod regions;
 pub mod users;
@@ -46,6 +47,7 @@ pub enum DdbCommand {
     Members(members::Cmd),
     Clubs(clubs::Cmd),
     Regions(regions::Cmd),
+    International(international::Cmd),
 }
 
 impl DdbCommand {
@@ -55,6 +57,7 @@ impl DdbCommand {
             Self::Members(cmd) => cmd.run().await,
             Self::Clubs(cmd) => cmd.run().await,
             Self::Regions(cmd) => cmd.run().await,
+            Self::International(cmd) => cmd.run().await,
         }
     }
 }
