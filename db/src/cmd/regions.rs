@@ -1,6 +1,6 @@
 use super::{Result, connect_from_env, print_json};
-use db::region;
 use anyhow::anyhow;
+use db::region;
 
 /// Region management commands
 ///

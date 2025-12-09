@@ -410,7 +410,11 @@ pub async fn run(
         .flatten()
         .chain(ddb_club_leadership.iter().map(|lead| lead.user.clone()))
         .chain(ddb_region_leadership.iter().map(|lead| lead.user.clone()))
-        .chain(ddb_international_leadership.iter().map(|lead| lead.user.clone()))
+        .chain(
+            ddb_international_leadership
+                .iter()
+                .map(|lead| lead.user.clone()),
+        )
         .unique_by(|user| user.uid)
         .collect_vec();
 

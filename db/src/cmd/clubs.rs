@@ -1,6 +1,6 @@
 use super::{Result, connect_from_env, print_json};
-use db::club;
 use anyhow::anyhow;
+use db::club;
 
 /// Club management commands
 ///
