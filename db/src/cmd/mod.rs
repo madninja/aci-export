@@ -13,6 +13,7 @@ pub async fn connect_from_env() -> Result<PgPool> {
 pub mod addresses;
 pub mod brns;
 pub mod clubs;
+pub mod international;
 pub mod members;
 pub mod regions;
 pub mod users;
@@ -40,6 +41,7 @@ pub enum DbCommand {
     Members(members::Cmd),
     Clubs(clubs::Cmd),
     Regions(regions::Cmd),
+    International(international::Cmd),
     Addresses(addresses::Cmd),
     Brns(brns::Cmd),
 }
@@ -51,6 +53,7 @@ impl DbCommand {
             Self::Members(cmd) => cmd.run().await,
             Self::Clubs(cmd) => cmd.run().await,
             Self::Regions(cmd) => cmd.run().await,
+            Self::International(cmd) => cmd.run().await,
             Self::Addresses(cmd) => cmd.run().await,
             Self::Brns(cmd) => cmd.run().await,
         }

@@ -66,4 +66,21 @@ pub mod db {
             }
         }
     }
+
+    impl From<crate::leadership::Leadership> for app_db::region::Leadership {
+        fn from(value: crate::leadership::Leadership) -> Self {
+            Self {
+                id: None,
+                region: app_db::region::Region {
+                    uid: value.entity_uid as i64,
+                    number: None,
+                    name: None,
+                },
+                user: value.user.into(),
+                role: value.role.into(),
+                start_date: value.start_date,
+                end_date: value.end_date,
+            }
+        }
+    }
 }

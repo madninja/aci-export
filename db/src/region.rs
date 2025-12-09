@@ -1,6 +1,6 @@
-use crate::{Error, Result, retain_with_keys};
-use futures::TryFutureExt;
-use sqlx::{PgPool, Postgres};
+use crate::{DB_INSERT_CHUNK_SIZE, Error, Result, leadership, retain_with_keys, user};
+use futures::{StreamExt, TryFutureExt, TryStreamExt, stream};
+use sqlx::{PgPool, Postgres, QueryBuilder};
 
 pub async fn all(pool: &PgPool) -> Result<Vec<Region>> {
     sqlx::query_as::<_, Region>(FETCH_REGIONS_QUERY)
@@ -76,4 +76,189 @@ pub struct Region {
     pub number: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+}
+
+// ========== Region Leadership ==========
+
+#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+pub struct Leadership {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    #[sqlx(flatten, try_from = "RegionRef")]
+    pub region: Region,
+    #[sqlx(flatten)]
+    pub user: user::User,
+    #[sqlx(flatten, try_from = "RoleRef")]
+    pub role: leadership::Role,
+    pub start_date: chrono::NaiveDate,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_date: Option<chrono::NaiveDate>,
+}
+
+// Intermediary structs for sqlx extraction
+#[derive(Debug, sqlx::FromRow)]
+struct RegionRef {
+    region_uid: i64,
+    region_number: Option<i32>,
+    region_name: Option<String>,
+}
+
+impl From<RegionRef> for Region {
+    fn from(value: RegionRef) -> Self {
+        Self {
+            uid: value.region_uid,
+            number: value.region_number,
+            name: value.region_name,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RoleRef {
+    role_uid: i64,
+    role_title: String,
+}
+
+impl From<RoleRef> for leadership::Role {
+    fn from(value: RoleRef) -> Self {
+        Self {
+            uid: value.role_uid,
+            title: value.role_title,
+        }
+    }
+}
+
+const FETCH_LEADERSHIP_QUERY: &str = r#"
+    SELECT
+        lr.id,
+        lr.start_date,
+        lr.end_date,
+
+        reg.uid as region_uid,
+        reg.number as region_number,
+        reg.name as region_name,
+
+        u.id,
+        u.uid,
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.birthday,
+        u.phone_mobile,
+        u.phone_home,
+        u.last_login,
+
+        r.uid as role_uid,
+        r.title as role_title
+    FROM
+        leadership_region lr
+        JOIN regions reg ON reg.uid = lr.region
+        JOIN users u ON u.id = lr.user_id
+        JOIN leadership_role r ON r.uid = lr.role
+"#;
+
+fn fetch_leadership_query<'builder>() -> QueryBuilder<'builder, Postgres> {
+    QueryBuilder::new(FETCH_LEADERSHIP_QUERY)
+}
+
+pub async fn all_leadership(pool: &PgPool) -> Result<Vec<Leadership>> {
+    sqlx::query_as::<_, Leadership>(FETCH_LEADERSHIP_QUERY)
+        .fetch_all(pool)
+        .await
+        .map_err(Error::from)
+}
+
+pub async fn leadership_by_number(pool: &PgPool, region_number: i32) -> Result<Vec<Leadership>> {
+    fetch_leadership_query()
+        .push("WHERE lr.region = ")
+        .push_bind(region_number as i64)
+        .build_query_as::<Leadership>()
+        .fetch_all(pool)
+        .await
+        .map_err(Error::from)
+}
+
+pub async fn leadership_by_uid(pool: &PgPool, region_uid: i64) -> Result<Vec<Leadership>> {
+    fetch_leadership_query()
+        .push("WHERE reg.uid = ")
+        .push_bind(region_uid)
+        .build_query_as::<Leadership>()
+        .fetch_all(pool)
+        .await
+        .map_err(Error::from)
+}
+
+pub async fn upsert_leadership(pool: &PgPool, leadership: &[Leadership]) -> Result<u64> {
+    if leadership.is_empty() {
+        return Ok(0);
+    }
+
+    let affected: Vec<u64> = stream::iter(leadership)
+        .chunks(DB_INSERT_CHUNK_SIZE)
+        .map(Ok::<_, Error>)
+        .and_then(|chunk| async move {
+            let result = QueryBuilder::new(
+                r#"INSERT INTO leadership_region(
+                    region,
+                    user_id,
+                    role,
+                    start_date,
+                    end_date
+                ) "#,
+            )
+            .push_values(&chunk, |mut b, lead| {
+                b.push_bind(lead.region.uid)
+                    .push_bind(&lead.user.id)
+                    .push_bind(lead.role.uid)
+                    .push_bind(lead.start_date)
+                    .push_bind(lead.end_date);
+            })
+            .push(
+                r#"ON CONFLICT(region, user_id, role, start_date) DO UPDATE SET
+                    end_date = excluded.end_date
+                "#,
+            )
+            .build()
+            .execute(pool)
+            .await?;
+            Ok::<u64, Error>(result.rows_affected())
+        })
+        .try_collect()
+        .await?;
+    Ok(affected.iter().sum())
+}
+
+pub async fn retain_leadership(pool: &PgPool, leadership: &[Leadership]) -> Result<u64> {
+    if leadership.is_empty() {
+        return Ok(0);
+    }
+
+    let mut tx = pool.begin().await?;
+
+    let mut builder = QueryBuilder::<Postgres>::new(
+        "DELETE FROM leadership_region WHERE (region, user_id, role, start_date) NOT IN (",
+    );
+
+    for (i, lead) in leadership.iter().enumerate() {
+        if i > 0 {
+            builder.push(", ");
+        }
+        builder.push("(");
+        builder.push_bind(lead.region.uid);
+        builder.push(", ");
+        builder.push_bind(&lead.user.id);
+        builder.push(", ");
+        builder.push_bind(lead.role.uid);
+        builder.push(", ");
+        builder.push_bind(lead.start_date);
+        builder.push(")");
+    }
+
+    builder.push(")");
+
+    let result = builder.build().execute(&mut *tx).await?;
+    let total_affected = result.rows_affected();
+
+    tx.commit().await?;
+    Ok(total_affected)
 }

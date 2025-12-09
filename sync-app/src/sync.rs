@@ -2,7 +2,7 @@ use crate::{
     Result,
     settings::{AciDatabaseSettings, AppSettings},
 };
-use db::{address, brn, club, member, region, user};
+use db::{address, brn, club, leadership, member, region, user};
 use itertools::Itertools;
 use serde::Serialize;
 use sqlx::PgPool;
@@ -221,6 +221,163 @@ pub async fn retain_brns(
     Ok(())
 }
 
+// ========== Leadership Role Sync ==========
+
+pub async fn upsert_roles<I>(
+    db: &PgPool,
+    roles: I,
+) -> Result<((String, SyncStats), Vec<leadership::Role>)>
+where
+    I: IntoIterator<Item = ddb::leadership::Role>,
+{
+    let start = Instant::now();
+    let db_roles = roles.into_iter().map(leadership::Role::from).collect_vec();
+    let upserted = leadership::upsert_roles(db, &db_roles).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(upserted, duration, "upserted leadership roles");
+    Ok((
+        (
+            "leadership_roles".to_string(),
+            SyncStats::new(upserted, duration),
+        ),
+        db_roles,
+    ))
+}
+
+pub async fn retain_roles(
+    db: &PgPool,
+    stats: &mut (String, SyncStats),
+    db_roles: &[leadership::Role],
+) -> Result<()> {
+    let start = Instant::now();
+    let deleted = leadership::retain_roles(db, db_roles).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(deleted, duration, "gc leadership roles");
+    stats.1.deleted = deleted;
+    stats.1.duration += duration;
+    Ok(())
+}
+
+// ========== Club Leadership Sync ==========
+
+pub async fn upsert_club_leadership<I>(
+    db: &PgPool,
+    leadership: I,
+) -> Result<((String, SyncStats), Vec<club::Leadership>)>
+where
+    I: IntoIterator<Item = ddb::leadership::Leadership>,
+{
+    let start = Instant::now();
+    let db_leadership = leadership
+        .into_iter()
+        .map(club::Leadership::from)
+        .collect_vec();
+    let upserted = club::upsert_leadership(db, &db_leadership).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(upserted, duration, "upserted club leadership");
+    Ok((
+        (
+            "leadership_club".to_string(),
+            SyncStats::new(upserted, duration),
+        ),
+        db_leadership,
+    ))
+}
+
+pub async fn retain_club_leadership(
+    db: &PgPool,
+    stats: &mut (String, SyncStats),
+    db_leadership: &[club::Leadership],
+) -> Result<()> {
+    let start = Instant::now();
+    let deleted = club::retain_leadership(db, db_leadership).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(deleted, duration, "gc club leadership");
+    stats.1.deleted = deleted;
+    stats.1.duration += duration;
+    Ok(())
+}
+
+// ========== Region Leadership Sync ==========
+
+pub async fn upsert_region_leadership<I>(
+    db: &PgPool,
+    leadership: I,
+) -> Result<((String, SyncStats), Vec<region::Leadership>)>
+where
+    I: IntoIterator<Item = ddb::leadership::Leadership>,
+{
+    let start = Instant::now();
+    let db_leadership = leadership
+        .into_iter()
+        .map(region::Leadership::from)
+        .collect_vec();
+    let upserted = region::upsert_leadership(db, &db_leadership).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(upserted, duration, "upserted region leadership");
+    Ok((
+        (
+            "leadership_region".to_string(),
+            SyncStats::new(upserted, duration),
+        ),
+        db_leadership,
+    ))
+}
+
+pub async fn retain_region_leadership(
+    db: &PgPool,
+    stats: &mut (String, SyncStats),
+    db_leadership: &[region::Leadership],
+) -> Result<()> {
+    let start = Instant::now();
+    let deleted = region::retain_leadership(db, db_leadership).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(deleted, duration, "gc region leadership");
+    stats.1.deleted = deleted;
+    stats.1.duration += duration;
+    Ok(())
+}
+
+// ========== International Leadership Sync ==========
+
+pub async fn upsert_international_leadership<I>(
+    db: &PgPool,
+    leadership: I,
+) -> Result<((String, SyncStats), Vec<leadership::Leadership>)>
+where
+    I: IntoIterator<Item = ddb::leadership::Leadership>,
+{
+    let start = Instant::now();
+    let db_leadership = leadership
+        .into_iter()
+        .map(leadership::Leadership::from)
+        .collect_vec();
+    let upserted = leadership::upsert_leadership(db, &db_leadership).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(upserted, duration, "upserted international leadership");
+    Ok((
+        (
+            "leadership_international".to_string(),
+            SyncStats::new(upserted, duration),
+        ),
+        db_leadership,
+    ))
+}
+
+pub async fn retain_international_leadership(
+    db: &PgPool,
+    stats: &mut (String, SyncStats),
+    db_leadership: &[leadership::Leadership],
+) -> Result<()> {
+    let start = Instant::now();
+    let deleted = leadership::retain_leadership(db, db_leadership).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(deleted, duration, "gc international leadership");
+    stats.1.deleted = deleted;
+    stats.1.duration += duration;
+    Ok(())
+}
+
 #[tracing::instrument(skip_all, name = "sync")]
 pub async fn run(
     app_settings: &AppSettings,
@@ -235,16 +392,39 @@ pub async fn run(
     let ddb_regions = ddb::regions::all(&ddb).await?;
     let ddb_clubs = ddb::clubs::all(&ddb).await?;
     let ddb_members = ddb::members::all(&ddb).await?;
-    let ddb_users = ddb_members
-        .iter()
-        .flat_map(|ddb_member| [Some(ddb_member.primary.clone()), ddb_member.partner.clone()])
-        .flatten()
-        .collect_vec();
     let db_brns = ddb_members
         .iter()
         .flat_map(Into::<Vec<brn::Brn>>::into)
         .collect_vec();
     let mut ddb_addresses = ddb::members::mailing_address::for_members(&ddb, &ddb_members).await?;
+
+    // Fetch leadership data from DDB
+    let ddb_club_leadership = ddb::leadership::for_all_clubs(&ddb).await?;
+    let ddb_region_leadership = ddb::leadership::for_all_regions(&ddb).await?;
+    let ddb_international_leadership = ddb::leadership::for_international(&ddb).await?;
+
+    // Collect all users from members AND leadership records
+    let ddb_users = ddb_members
+        .iter()
+        .flat_map(|ddb_member| [Some(ddb_member.primary.clone()), ddb_member.partner.clone()])
+        .flatten()
+        .chain(ddb_club_leadership.iter().map(|lead| lead.user.clone()))
+        .chain(ddb_region_leadership.iter().map(|lead| lead.user.clone()))
+        .chain(ddb_international_leadership.iter().map(|lead| lead.user.clone()))
+        .unique_by(|user| user.uid)
+        .collect_vec();
+
+    // Collect all unique roles from all leadership types
+    let ddb_roles = ddb_club_leadership
+        .iter()
+        .chain(ddb_region_leadership.iter())
+        .chain(ddb_international_leadership.iter())
+        .map(|lead| lead.role.clone())
+        .unique_by(|role| role.uid)
+        .collect_vec();
+
+    // Upsert roles first (no dependencies)
+    let (mut role_stats, db_roles) = upsert_roles(&db, ddb_roles).await?;
 
     let (mut region_stats, db_regions) = upsert_regions(&db, ddb_regions).await?;
     let (mut club_stats, db_clubs) = upsert_clubs(&db, ddb_clubs).await?;
@@ -254,13 +434,32 @@ pub async fn run(
     let (mut member_stats, db_members) = upsert_members(&db, ddb_members).await?;
     let (mut brn_stats, db_brns) = upsert_brns(&db, &db_brns).await?;
 
+    // Upsert leadership (depends on roles, clubs, regions, users)
+    let (mut club_leadership_stats, db_club_leadership) =
+        upsert_club_leadership(&db, ddb_club_leadership).await?;
+    let (mut region_leadership_stats, db_region_leadership) =
+        upsert_region_leadership(&db, ddb_region_leadership).await?;
+    let (mut international_leadership_stats, db_international_leadership) =
+        upsert_international_leadership(&db, ddb_international_leadership).await?;
+
     retain_clubs(&db, &mut club_stats, &db_clubs).await?;
     retain_regions(&db, &mut region_stats, &db_regions).await?;
     retain_brns(&db, &mut brn_stats, &db_brns).await?;
     retain_members(&db, &mut member_stats, &db_members).await?;
 
+    // Retain leadership before retaining users/roles
+    retain_club_leadership(&db, &mut club_leadership_stats, &db_club_leadership).await?;
+    retain_region_leadership(&db, &mut region_leadership_stats, &db_region_leadership).await?;
+    retain_international_leadership(
+        &db,
+        &mut international_leadership_stats,
+        &db_international_leadership,
+    )
+    .await?;
+
     retain_addresses(&db, &mut address_stats, &db_addresses).await?;
     retain_users(&db, &mut user_stats, &db_users).await?;
+    retain_roles(&db, &mut role_stats, &db_roles).await?;
 
     let duration = start.elapsed().as_secs();
     tracing::info!(duration, "sync complete");
@@ -272,6 +471,10 @@ pub async fn run(
         club_stats,
         user_stats,
         member_stats,
+        role_stats,
+        club_leadership_stats,
+        region_leadership_stats,
+        international_leadership_stats,
     ]
     .into_iter()
     .collect();

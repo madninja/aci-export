@@ -13,7 +13,7 @@ pub struct Leadership {
     pub user: User,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct Role {
     pub uid: u64,
     pub title: String,
@@ -133,4 +133,30 @@ pub async fn for_region_by_number(pool: &MySqlPool, number: i32) -> Result<Vec<L
 
 pub async fn for_international(pool: &MySqlPool) -> Result<Vec<Leadership>> {
     fetch_leadership_for_type(pool, "ssp_international_leadership", None).await
+}
+
+pub mod db {
+    use super::*;
+    use ::db as app_db;
+
+    impl From<Role> for app_db::leadership::Role {
+        fn from(value: Role) -> Self {
+            Self {
+                uid: value.uid as i64,
+                title: value.title,
+            }
+        }
+    }
+
+    impl From<Leadership> for app_db::leadership::Leadership {
+        fn from(value: Leadership) -> Self {
+            Self {
+                id: None,
+                user: value.user.into(),
+                role: value.role.into(),
+                start_date: value.start_date,
+                end_date: value.end_date,
+            }
+        }
+    }
 }

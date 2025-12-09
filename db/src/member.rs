@@ -112,7 +112,7 @@ const FETCH_MEMBERS_QUERY: &str = r#"
         LEFT JOIN users user ON user.id = member.primary_user
         LEFT JOIN users partner ON user.id= member.partner_user
         LEFT JOIN clubs club ON club.number = member.local_club
-        LEFT JOIN regions region ON region.number = club.region
+        LEFT JOIN regions region ON region.uid = club.region
 "#;
 
 fn fetch_members_query<'builder>() -> sqlx::QueryBuilder<'builder, Postgres> {

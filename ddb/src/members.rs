@@ -819,7 +819,7 @@ impl From<LocalClub> for Club {
             uid: value.club_uid.unwrap_or_default(),
             number: value.club_number,
             name: value.club_name.unwrap_or_default(),
-            region: value.club_region,
+            region: value.club_region_uid,
         }
     }
 }

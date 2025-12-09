@@ -1,68 +1,143 @@
 use super::{Result, connect_from_env, print_json};
 use db::region;
+use anyhow::anyhow;
 
+/// Region management commands
+///
+/// Examples:
+///   # List all regions
+///   db regions
+///
+///   # Get region by uid
+///   db regions 456
+///
+///   # Get region by number
+///   db regions --number 5
+///
+///   # Get leadership for all regions
+///   db regions leadership
+///
+///   # Get leadership for region by uid
+///   db regions leadership 456
+///
+///   # Get leadership for region by number
+///   db regions leadership --number 5
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
+    /// Region uid or number (depending on --number flag). Omit to list all regions.
+    pub id: Option<i64>,
+
+    /// Treat the id as a region number instead of uid
+    #[arg(long)]
+    pub number: bool,
+
     #[command(subcommand)]
-    cmd: RegionCmd,
+    cmd: Option<RegionCmd>,
 }
 
 impl Cmd {
     pub async fn run(&self) -> Result {
-        self.cmd.run().await
+        match &self.cmd {
+            Some(cmd) => cmd.run().await,
+            None => {
+                Get {
+                    id: self.id,
+                    number: self.number,
+                }
+                .run()
+                .await
+            }
+        }
     }
 }
 
 #[derive(Debug, clap::Subcommand)]
 pub enum RegionCmd {
-    List(List),
-    Number(Number),
-    Uid(Uid),
+    Leadership(LeadershipCmd),
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct LeadershipCmd {
+    /// Optional region uid (default) or number (with --number flag). If not provided, returns leadership for all regions.
+    pub id: Option<i64>,
+
+    /// Treat the id as a region number instead of uid
+    #[arg(long)]
+    pub number: bool,
 }
 
 impl RegionCmd {
     pub async fn run(&self) -> Result {
         match self {
-            Self::Number(cmd) => cmd.run().await,
-            Self::Uid(cmd) => cmd.run().await,
-            Self::List(cmd) => cmd.run().await,
+            Self::Leadership(args) => {
+                Leadership {
+                    id: args.id,
+                    number: args.number,
+                }
+                .run()
+                .await
+            }
         }
     }
 }
 
-#[derive(Debug, clap::Args)]
-pub struct Number {
-    pub number: i32,
+struct Get {
+    id: Option<i64>,
+    number: bool,
 }
 
-impl Number {
+impl Get {
     pub async fn run(&self) -> Result {
         let db = connect_from_env().await?;
-        let region = region::by_number(&db, self.number).await?;
-        print_json(&region)
+
+        match (self.id, self.number) {
+            (Some(id), true) => {
+                // Lookup by number
+                let region = region::by_number(&db, id as i32)
+                    .await?
+                    .ok_or_else(|| anyhow!("Region number {id} not found"))?;
+                print_json(&region)
+            }
+            (Some(id), false) => {
+                // Lookup by uid
+                let region = region::by_uid(&db, id)
+                    .await?
+                    .ok_or_else(|| anyhow!("Region uid {id} not found"))?;
+                print_json(&region)
+            }
+            (None, _) => {
+                // No id - get all regions
+                let regions = region::all(&db).await?;
+                print_json(&regions)
+            }
+        }
     }
 }
 
-#[derive(Debug, clap::Args)]
-pub struct Uid {
-    pub uid: i64,
+struct Leadership {
+    id: Option<i64>,
+    number: bool,
 }
 
-impl Uid {
+impl Leadership {
     pub async fn run(&self) -> Result {
         let db = connect_from_env().await?;
-        let region = region::by_uid(&db, self.uid).await?;
-        print_json(&region)
-    }
-}
 
-#[derive(Debug, clap::Args)]
-pub struct List {}
+        let leadership = match (self.id, self.number) {
+            (Some(id), true) => {
+                // Lookup by number
+                region::leadership_by_number(&db, id as i32).await?
+            }
+            (Some(id), false) => {
+                // Lookup by uid (default)
+                region::leadership_by_uid(&db, id).await?
+            }
+            (None, _) => {
+                // No id provided - get all
+                region::all_leadership(&db).await?
+            }
+        };
 
-impl List {
-    pub async fn run(&self) -> Result {
-        let db = connect_from_env().await?;
-        let regions = region::all(&db).await?;
-        print_json(&regions)
+        print_json(&leadership)
     }
 }
