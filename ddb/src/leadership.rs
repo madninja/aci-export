@@ -1,5 +1,18 @@
 use crate::{Error, Result, users::User};
-use sqlx::{MySql, MySqlPool};
+use chrono::NaiveDate;
+use sqlx::{MySql, MySqlPool, QueryBuilder};
+
+/// Filter for leadership queries by date
+#[derive(Debug, Clone, Default)]
+pub enum DateFilter {
+    /// Only currently active leadership (default)
+    #[default]
+    Current,
+    /// All leadership regardless of dates
+    All,
+    /// Leadership active on a specific date
+    AsOf(NaiveDate),
+}
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 pub struct Leadership {
@@ -35,7 +48,7 @@ impl From<RoleFromRow> for Role {
     }
 }
 
-const FETCH_LEADERSHIP_QUERY: &str = r#"
+const FETCH_LEADERSHIP_BASE: &str = r#"
     SELECT
         entity.nid AS entity_uid,
         role_term.tid AS role_uid,
@@ -64,29 +77,52 @@ const FETCH_LEADERSHIP_QUERY: &str = r#"
     LEFT JOIN user__field_first_name ufn ON ufn.entity_id = usr.uid
     LEFT JOIN user__field_last_name uln ON uln.entity_id = usr.uid
     LEFT JOIN user__field_birth_date ubd ON ubd.entity_id = usr.uid
-    WHERE DATE(start.field_start_date_value) <= CURRENT_DATE
-      AND (end.field_end_date_value IS NULL OR DATE(end.field_end_date_value) >= CURRENT_DATE)
-      AND
+    WHERE
 "#;
 
-fn fetch_leadership_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
-    sqlx::QueryBuilder::new(FETCH_LEADERSHIP_QUERY)
+fn apply_date_filter(query: &mut QueryBuilder<MySql>, filter: &DateFilter) {
+    query.push("start.field_start_date_value IS NOT NULL");
+    match filter {
+        DateFilter::Current => {
+            query.push(" AND DATE(start.field_start_date_value) <= CURRENT_DATE");
+            query.push(" AND (end.field_end_date_value IS NULL OR DATE(end.field_end_date_value) >= CURRENT_DATE)");
+        }
+        DateFilter::All => {}
+        DateFilter::AsOf(date) => {
+            query
+                .push(" AND DATE(start.field_start_date_value) <= ")
+                .push_bind(*date);
+            query
+                .push(
+                    " AND (end.field_end_date_value IS NULL OR DATE(end.field_end_date_value) >= ",
+                )
+                .push_bind(*date)
+                .push(")");
+        }
+    }
+}
+
+fn fetch_leadership_query<'builder>(filter: &DateFilter) -> QueryBuilder<'builder, MySql> {
+    let mut query = QueryBuilder::new(FETCH_LEADERSHIP_BASE);
+    apply_date_filter(&mut query, filter);
+    query
 }
 
 async fn fetch_leadership_for_type(
     pool: &MySqlPool,
     entity_type: &str,
     entity_id: Option<u64>,
+    filter: DateFilter,
 ) -> Result<Vec<Leadership>> {
     use futures::TryFutureExt;
 
-    let mut query = fetch_leadership_query();
+    let mut query = fetch_leadership_query(&filter);
 
     if let Some(id) = entity_id {
-        query.push("entity.nid = ").push_bind(id).push(" AND ");
+        query.push(" AND entity.nid = ").push_bind(id);
     }
 
-    query.push("entity.type = ").push_bind(entity_type);
+    query.push(" AND entity.type = ").push_bind(entity_type);
 
     query
         .build_query_as::<Leadership>()
@@ -95,44 +131,46 @@ async fn fetch_leadership_for_type(
         .await
 }
 
-pub async fn for_club(pool: &MySqlPool, uid: u64) -> Result<Vec<Leadership>> {
-    fetch_leadership_for_type(pool, "ssp_club", Some(uid)).await
+pub async fn for_club(pool: &MySqlPool, uid: u64, filter: DateFilter) -> Result<Vec<Leadership>> {
+    fetch_leadership_for_type(pool, "ssp_club", Some(uid), filter).await
 }
 
-pub async fn for_all_clubs(pool: &MySqlPool) -> Result<Vec<Leadership>> {
-    fetch_leadership_for_type(pool, "ssp_club", None).await
+pub async fn for_all_clubs(pool: &MySqlPool, filter: DateFilter) -> Result<Vec<Leadership>> {
+    fetch_leadership_for_type(pool, "ssp_club", None, filter).await
 }
 
-pub async fn for_region(pool: &MySqlPool, uid: u64) -> Result<Vec<Leadership>> {
-    fetch_leadership_for_type(pool, "ssp_region", Some(uid)).await
+pub async fn for_region(pool: &MySqlPool, uid: u64, filter: DateFilter) -> Result<Vec<Leadership>> {
+    fetch_leadership_for_type(pool, "ssp_region", Some(uid), filter).await
 }
 
-pub async fn for_all_regions(pool: &MySqlPool) -> Result<Vec<Leadership>> {
-    fetch_leadership_for_type(pool, "ssp_region", None).await
+pub async fn for_all_regions(pool: &MySqlPool, filter: DateFilter) -> Result<Vec<Leadership>> {
+    fetch_leadership_for_type(pool, "ssp_region", None, filter).await
 }
 
-pub async fn for_club_by_number(pool: &MySqlPool, number: i32) -> Result<Vec<Leadership>> {
-    // First lookup club by number to get uid
+pub async fn for_club_by_number(
+    pool: &MySqlPool,
+    number: i32,
+    filter: DateFilter,
+) -> Result<Vec<Leadership>> {
     let club = crate::clubs::by_number(pool, number)
         .await?
         .ok_or_else(|| Error::Request(sqlx::Error::RowNotFound))?;
-
-    // Then get leadership for that club uid
-    for_club(pool, club.uid).await
+    for_club(pool, club.uid, filter).await
 }
 
-pub async fn for_region_by_number(pool: &MySqlPool, number: i32) -> Result<Vec<Leadership>> {
-    // First lookup region by number to get uid
+pub async fn for_region_by_number(
+    pool: &MySqlPool,
+    number: i32,
+    filter: DateFilter,
+) -> Result<Vec<Leadership>> {
     let region = crate::regions::by_number(pool, number)
         .await?
         .ok_or_else(|| Error::Request(sqlx::Error::RowNotFound))?;
-
-    // Then get leadership for that region uid
-    for_region(pool, region.uid).await
+    for_region(pool, region.uid, filter).await
 }
 
-pub async fn for_international(pool: &MySqlPool) -> Result<Vec<Leadership>> {
-    fetch_leadership_for_type(pool, "ssp_international_leadership", None).await
+pub async fn for_international(pool: &MySqlPool, filter: DateFilter) -> Result<Vec<Leadership>> {
+    fetch_leadership_for_type(pool, "ssp_international_leadership", None, filter).await
 }
 
 pub mod db {

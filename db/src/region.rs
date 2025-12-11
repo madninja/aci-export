@@ -1,5 +1,6 @@
 use crate::{DB_INSERT_CHUNK_SIZE, Error, Result, leadership, retain_with_keys, user};
 use futures::{StreamExt, TryFutureExt, TryStreamExt, stream};
+use itertools::Itertools;
 use sqlx::{PgPool, Postgres, QueryBuilder};
 
 pub async fn all(pool: &PgPool) -> Result<Vec<Region>> {
@@ -161,27 +162,45 @@ fn fetch_leadership_query<'builder>() -> QueryBuilder<'builder, Postgres> {
     QueryBuilder::new(FETCH_LEADERSHIP_QUERY)
 }
 
-pub async fn all_leadership(pool: &PgPool) -> Result<Vec<Leadership>> {
-    sqlx::query_as::<_, Leadership>(FETCH_LEADERSHIP_QUERY)
-        .fetch_all(pool)
-        .await
-        .map_err(Error::from)
-}
-
-pub async fn leadership_by_number(pool: &PgPool, region_number: i32) -> Result<Vec<Leadership>> {
-    fetch_leadership_query()
-        .push("WHERE lr.region = ")
-        .push_bind(region_number as i64)
+pub async fn all_leadership(
+    pool: &PgPool,
+    filter: leadership::DateFilter,
+) -> Result<Vec<Leadership>> {
+    let mut query = fetch_leadership_query();
+    leadership::apply_date_filter(&mut query, &filter, false);
+    query
         .build_query_as::<Leadership>()
         .fetch_all(pool)
         .await
         .map_err(Error::from)
 }
 
-pub async fn leadership_by_uid(pool: &PgPool, region_uid: i64) -> Result<Vec<Leadership>> {
-    fetch_leadership_query()
-        .push("WHERE reg.uid = ")
-        .push_bind(region_uid)
+pub async fn leadership_by_number(
+    pool: &PgPool,
+    region_number: i32,
+    filter: leadership::DateFilter,
+) -> Result<Vec<Leadership>> {
+    let mut query = fetch_leadership_query();
+    query
+        .push("WHERE lr.region = ")
+        .push_bind(region_number as i64);
+    leadership::apply_date_filter(&mut query, &filter, true);
+    query
+        .build_query_as::<Leadership>()
+        .fetch_all(pool)
+        .await
+        .map_err(Error::from)
+}
+
+pub async fn leadership_by_uid(
+    pool: &PgPool,
+    region_uid: i64,
+    filter: leadership::DateFilter,
+) -> Result<Vec<Leadership>> {
+    let mut query = fetch_leadership_query();
+    query.push("WHERE reg.uid = ").push_bind(region_uid);
+    leadership::apply_date_filter(&mut query, &filter, true);
+    query
         .build_query_as::<Leadership>()
         .fetch_all(pool)
         .await
@@ -193,38 +212,42 @@ pub async fn upsert_leadership(pool: &PgPool, leadership: &[Leadership]) -> Resu
         return Ok(0);
     }
 
-    let affected: Vec<u64> = stream::iter(leadership)
-        .chunks(DB_INSERT_CHUNK_SIZE)
-        .map(Ok::<_, Error>)
-        .and_then(|chunk| async move {
-            let result = QueryBuilder::new(
-                r#"INSERT INTO leadership_region(
+    let affected: Vec<u64> = stream::iter(
+        leadership
+            .iter()
+            .unique_by(|l| (l.region.uid, &l.user.id, l.role.uid, l.start_date)),
+    )
+    .chunks(DB_INSERT_CHUNK_SIZE)
+    .map(Ok::<_, Error>)
+    .and_then(|chunk| async move {
+        let result = QueryBuilder::new(
+            r#"INSERT INTO leadership_region(
                     region,
                     user_id,
                     role,
                     start_date,
                     end_date
                 ) "#,
-            )
-            .push_values(&chunk, |mut b, lead| {
-                b.push_bind(lead.region.uid)
-                    .push_bind(&lead.user.id)
-                    .push_bind(lead.role.uid)
-                    .push_bind(lead.start_date)
-                    .push_bind(lead.end_date);
-            })
-            .push(
-                r#"ON CONFLICT(region, user_id, role, start_date) DO UPDATE SET
+        )
+        .push_values(&chunk, |mut b, lead| {
+            b.push_bind(lead.region.uid)
+                .push_bind(&lead.user.id)
+                .push_bind(lead.role.uid)
+                .push_bind(lead.start_date)
+                .push_bind(lead.end_date);
+        })
+        .push(
+            r#"ON CONFLICT(region, user_id, role, start_date) DO UPDATE SET
                     end_date = excluded.end_date
                 "#,
-            )
-            .build()
-            .execute(pool)
-            .await?;
-            Ok::<u64, Error>(result.rows_affected())
-        })
-        .try_collect()
+        )
+        .build()
+        .execute(pool)
         .await?;
+        Ok::<u64, Error>(result.rows_affected())
+    })
+    .try_collect()
+    .await?;
     Ok(affected.iter().sum())
 }
 
@@ -235,30 +258,49 @@ pub async fn retain_leadership(pool: &PgPool, leadership: &[Leadership]) -> Resu
 
     let mut tx = pool.begin().await?;
 
-    let mut builder = QueryBuilder::<Postgres>::new(
-        "DELETE FROM leadership_region WHERE (region, user_id, role, start_date) NOT IN (",
-    );
+    // Create temp table to hold keys to keep
+    sqlx::query(
+        r#"CREATE TEMP TABLE _keep_leadership_region (
+            region BIGINT,
+            user_id TEXT,
+            role BIGINT,
+            start_date DATE
+        ) ON COMMIT DROP"#,
+    )
+    .execute(&mut *tx)
+    .await?;
 
-    for (i, lead) in leadership.iter().enumerate() {
-        if i > 0 {
-            builder.push(", ");
-        }
-        builder.push("(");
-        builder.push_bind(lead.region.uid);
-        builder.push(", ");
-        builder.push_bind(&lead.user.id);
-        builder.push(", ");
-        builder.push_bind(lead.role.uid);
-        builder.push(", ");
-        builder.push_bind(lead.start_date);
-        builder.push(")");
+    // Insert keys in chunks
+    for chunk in leadership.chunks(DB_INSERT_CHUNK_SIZE) {
+        QueryBuilder::new(
+            "INSERT INTO _keep_leadership_region(region, user_id, role, start_date) ",
+        )
+        .push_values(chunk, |mut b, lead| {
+            b.push_bind(lead.region.uid)
+                .push_bind(&lead.user.id)
+                .push_bind(lead.role.uid)
+                .push_bind(lead.start_date);
+        })
+        .build()
+        .execute(&mut *tx)
+        .await?;
     }
 
-    builder.push(")");
+    // Delete rows not in temp table
+    let result = sqlx::query(
+        r#"DELETE FROM leadership_region lr
+           WHERE NOT EXISTS (
+               SELECT 1 FROM _keep_leadership_region k
+               WHERE k.region = lr.region
+                 AND k.user_id = lr.user_id
+                 AND k.role = lr.role
+                 AND k.start_date = lr.start_date
+           )"#,
+    )
+    .execute(&mut *tx)
+    .await?;
 
-    let result = builder.build().execute(&mut *tx).await?;
     let total_affected = result.rows_affected();
-
     tx.commit().await?;
     Ok(total_affected)
 }

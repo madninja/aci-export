@@ -14,14 +14,19 @@ use db::club;
 ///   # Get club by number
 ///   db clubs --number 42
 ///
-///   # Get leadership for all clubs
+///   # Get current leadership for all clubs
 ///   db clubs leadership
 ///
-///   # Get leadership for club by uid
+///   # Get current leadership for club by uid
 ///   db clubs leadership 12345
 ///
-///   # Get leadership for club by number
+///   # Get current leadership for club by number
 ///   db clubs leadership --number 42
+///
+///   # Get leadership as of a specific date
+///   db clubs leadership 2020-01-15
+///   db clubs leadership 12345 2020-01-15
+///   db clubs leadership --number 42 2020-01-15
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
     /// Club uid or number (depending on --number flag). Omit to list all clubs.
@@ -64,6 +69,9 @@ pub(crate) struct LeadershipCmd {
     /// Treat the id as a club number instead of uid
     #[arg(long)]
     pub number: bool,
+
+    /// Optional date (YYYY-MM-DD) to get leadership as of that date. Omit for current leadership.
+    pub as_of: Option<chrono::NaiveDate>,
 }
 
 impl ClubCmd {
@@ -73,6 +81,7 @@ impl ClubCmd {
                 Leadership {
                     id: args.id,
                     number: args.number,
+                    as_of: args.as_of,
                 }
                 .run()
                 .await
@@ -117,25 +126,20 @@ impl Get {
 struct Leadership {
     id: Option<i64>,
     number: bool,
+    as_of: Option<chrono::NaiveDate>,
 }
 
 impl Leadership {
     pub async fn run(&self) -> Result {
+        use db::leadership::DateFilter;
+
         let db = connect_from_env().await?;
+        let filter = self.as_of.map_or(DateFilter::Current, DateFilter::AsOf);
 
         let leadership = match (self.id, self.number) {
-            (Some(id), true) => {
-                // Lookup by number
-                club::leadership_by_number(&db, id as i32).await?
-            }
-            (Some(id), false) => {
-                // Lookup by uid (default)
-                club::leadership_by_uid(&db, id).await?
-            }
-            (None, _) => {
-                // No id provided - get all
-                club::all_leadership(&db).await?
-            }
+            (Some(id), true) => club::leadership_by_number(&db, id as i32, filter).await?,
+            (Some(id), false) => club::leadership_by_uid(&db, id, filter).await?,
+            (None, _) => club::all_leadership(&db, filter).await?,
         };
 
         print_json(&leadership)

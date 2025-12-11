@@ -398,10 +398,13 @@ pub async fn run(
         .collect_vec();
     let mut ddb_addresses = ddb::members::mailing_address::for_members(&ddb, &ddb_members).await?;
 
-    // Fetch leadership data from DDB
-    let ddb_club_leadership = ddb::leadership::for_all_clubs(&ddb).await?;
-    let ddb_region_leadership = ddb::leadership::for_all_regions(&ddb).await?;
-    let ddb_international_leadership = ddb::leadership::for_international(&ddb).await?;
+    // Fetch leadership data from DDB (all historical)
+    let ddb_club_leadership =
+        ddb::leadership::for_all_clubs(&ddb, ddb::leadership::DateFilter::All).await?;
+    let ddb_region_leadership =
+        ddb::leadership::for_all_regions(&ddb, ddb::leadership::DateFilter::All).await?;
+    let ddb_international_leadership =
+        ddb::leadership::for_international(&ddb, ddb::leadership::DateFilter::All).await?;
 
     // Collect all users from members AND leadership records
     let ddb_users = ddb_members
@@ -439,10 +442,38 @@ pub async fn run(
     let (mut brn_stats, db_brns) = upsert_brns(&db, &db_brns).await?;
 
     // Upsert leadership (depends on roles, clubs, regions, users)
-    let (mut club_leadership_stats, db_club_leadership) =
-        upsert_club_leadership(&db, ddb_club_leadership).await?;
-    let (mut region_leadership_stats, db_region_leadership) =
-        upsert_region_leadership(&db, ddb_region_leadership).await?;
+    // Filter to only leadership records referencing existing clubs/regions
+    let club_uids: std::collections::HashSet<i64> = db_clubs.iter().map(|c| c.uid).collect();
+    let region_uids: std::collections::HashSet<i64> = db_regions.iter().map(|r| r.uid).collect();
+
+    let (mut club_leadership_stats, db_club_leadership) = upsert_club_leadership(
+        &db,
+        ddb_club_leadership.into_iter().filter(|l| {
+            let exists = club_uids.contains(&(l.entity_uid as i64));
+            if !exists {
+                tracing::warn!(
+                    club_uid = l.entity_uid,
+                    "leadership references non-existent club"
+                );
+            }
+            exists
+        }),
+    )
+    .await?;
+    let (mut region_leadership_stats, db_region_leadership) = upsert_region_leadership(
+        &db,
+        ddb_region_leadership.into_iter().filter(|l| {
+            let exists = region_uids.contains(&(l.entity_uid as i64));
+            if !exists {
+                tracing::warn!(
+                    region_uid = l.entity_uid,
+                    "leadership references non-existent region"
+                );
+            }
+            exists
+        }),
+    )
+    .await?;
     let (mut international_leadership_stats, db_international_leadership) =
         upsert_international_leadership(&db, ddb_international_leadership).await?;
 

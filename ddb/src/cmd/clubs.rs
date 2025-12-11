@@ -14,14 +14,19 @@ use anyhow::anyhow;
 ///   # Get club by number
 ///   aci-ddb clubs --number 42
 ///
-///   # Get leadership for all clubs
+///   # Get current leadership for all clubs
 ///   aci-ddb clubs leadership
 ///
-///   # Get leadership for club by uid
+///   # Get current leadership for club by uid
 ///   aci-ddb clubs leadership 12345
 ///
-///   # Get leadership for club by number
+///   # Get current leadership for club by number
 ///   aci-ddb clubs leadership --number 42
+///
+///   # Get leadership as of a specific date
+///   aci-ddb clubs leadership 2020-01-15
+///   aci-ddb clubs leadership 12345 2020-01-15
+///   aci-ddb clubs leadership --number 42 2020-01-15
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
     /// Club uid or number (depending on --number flag). Omit to list all clubs.
@@ -64,6 +69,9 @@ pub(crate) struct LeadershipCmd {
     /// Treat the id as a club number instead of uid
     #[arg(long)]
     pub number: bool,
+
+    /// Optional date (YYYY-MM-DD) to get leadership as of that date. Omit for current leadership.
+    pub as_of: Option<chrono::NaiveDate>,
 }
 
 impl ClubCmd {
@@ -73,6 +81,7 @@ impl ClubCmd {
                 Leadership {
                     id: args.id,
                     number: args.number,
+                    as_of: args.as_of,
                 }
                 .run()
                 .await
@@ -117,25 +126,22 @@ impl Get {
 struct Leadership {
     id: Option<u64>,
     number: bool,
+    as_of: Option<chrono::NaiveDate>,
 }
 
 impl Leadership {
     pub async fn run(&self) -> Result {
+        use aci_ddb::leadership::DateFilter;
+
         let db = connect_from_env().await?;
+        let filter = self.as_of.map_or(DateFilter::Current, DateFilter::AsOf);
 
         let leadership = match (self.id, self.number) {
             (Some(id), true) => {
-                // Lookup by number
-                aci_ddb::leadership::for_club_by_number(&db, id as i32).await?
+                aci_ddb::leadership::for_club_by_number(&db, id as i32, filter).await?
             }
-            (Some(id), false) => {
-                // Lookup by uid (default)
-                aci_ddb::leadership::for_club(&db, id).await?
-            }
-            (None, _) => {
-                // No id provided - get all
-                aci_ddb::leadership::for_all_clubs(&db).await?
-            }
+            (Some(id), false) => aci_ddb::leadership::for_club(&db, id, filter).await?,
+            (None, _) => aci_ddb::leadership::for_all_clubs(&db, filter).await?,
         };
 
         print_json(&leadership)
