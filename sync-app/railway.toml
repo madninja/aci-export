@@ -3,6 +3,6 @@ builder = "RAILPACK"
 buildCommand = "cargo build --release --bin sync-app"
 
 [deploy]
-cronSchedule = "0 5 * * *"
+# cronSchedule = "0 5 * * *"
 startCommand = "./target/release/sync-app run"
 restartPolicyType = "NEVER"
