@@ -1,7 +1,6 @@
 [build]
-builder = "RAILPACK"
-buildCommand = "cargo build --release --bin sync-mail && cp target/release/sync-mail ."
+builder = "DOCKERFILE"
+dockerfilePath = "sync-mail/Dockerfile"
 
 [deploy]
-startCommand = "./sync-mail run"
 restartPolicyType = "NEVER"

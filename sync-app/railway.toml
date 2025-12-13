@@ -1,7 +1,6 @@
 [build]
-builder = "RAILPACK"
-buildCommand = "cargo build --release --bin sync-app && cp target/release/sync-app ."
+builder = "DOCKERFILE"
+dockerfilePath = "sync-app/Dockerfile"
 
 [deploy]
-startCommand = "./sync-app run"
 restartPolicyType = "NEVER"
