@@ -1,7 +1,7 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "cargo build --release --bin sync-mail"
+buildCommand = "cargo build --release --bin sync-mail && cp target/release/sync-mail ."
 
 [deploy]
-startCommand = "./target/release/sync-mail run"
+startCommand = "./sync-mail run"
 restartPolicyType = "NEVER"

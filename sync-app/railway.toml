@@ -1,7 +1,7 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "cargo build --release --bin sync-app"
+buildCommand = "cargo build --release --bin sync-app && cp target/release/sync-app ."
 
 [deploy]
-startCommand = "./target/release/sync-app run"
+startCommand = "./sync-app run"
 restartPolicyType = "NEVER"
