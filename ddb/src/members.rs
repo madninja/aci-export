@@ -797,6 +797,7 @@ impl From<PartnerUser> for Option<User> {
                 last_name: value.partner_last_name,
                 birthday: value.partner_birthday,
                 last_login: value.partner_last_login,
+                pass: None, // Partners don't have their own password
             })
         } else {
             None

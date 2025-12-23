@@ -13,6 +13,9 @@ pub struct User {
     pub birthday: Option<chrono::NaiveDate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_login: Option<chrono::NaiveDate>,
+    /// Drupal PHPass hash (e.g., "$S$E..."). Excluded from serialization.
+    #[serde(skip_serializing)]
+    pub pass: Option<String>,
 }
 
 fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
@@ -24,7 +27,8 @@ fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
                 user__field_first_name.field_first_name_value AS first_name,
                 user__field_last_name.field_last_name_value AS last_name,
                 CAST(user__field_birth_date.field_birth_date_value AS DATE) AS birthday,
-                DATE(FROM_UNIXTIME(users_field_data.login)) AS last_login
+                DATE(FROM_UNIXTIME(users_field_data.login)) AS last_login,
+                users_field_data.pass AS pass
             FROM
                 users_field_data
                 LEFT JOIN user__field_first_name ON users_field_data.uid = user__field_first_name.entity_id
@@ -57,6 +61,17 @@ pub async fn by_email(pool: &MySqlPool, email: &str) -> Result<Option<User>> {
         .await?;
 
     Ok(user)
+}
+
+/// Fetch all users with valid email addresses
+pub async fn all(pool: &MySqlPool) -> Result<Vec<User>> {
+    use futures::TryFutureExt;
+    fetch_user_query()
+        .push("users_field_data.mail != ''")
+        .build_query_as::<User>()
+        .fetch_all(pool)
+        .map_err(Into::into)
+        .await
 }
 
 pub mod db {
