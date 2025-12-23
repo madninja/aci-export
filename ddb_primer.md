@@ -463,6 +463,25 @@ FROM node_field_data nd
 WHERE nd.type = 'ssp_club'  -- or 'ssp_region'
 ```
 
+### User struct reuse in leadership queries
+
+The `aci_ddb::users::User` struct includes a `pass` field for the password hash. When reusing this struct in leadership queries (via `#[sqlx(flatten)]`), you must include `NULL AS pass` in the SELECT clause even though leadership queries don't need password data:
+
+```sql
+SELECT
+    ...
+    usr.uid AS uid,
+    COALESCE(md.email, usr.mail) AS email,
+    ufn.field_first_name_value AS first_name,
+    uln.field_last_name_value AS last_name,
+    CAST(ubd.field_birth_date_value AS DATE) AS birthday,
+    DATE(FROM_UNIXTIME(usr.login)) AS last_login,
+    NULL AS pass  -- Required for User struct compatibility
+FROM ...
+```
+
+Without this, sqlx will fail with "no column found for name: pass".
+
 ---
 
 ## End of Primer

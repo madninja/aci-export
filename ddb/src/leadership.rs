@@ -60,7 +60,8 @@ const FETCH_LEADERSHIP_BASE: &str = r#"
         ufn.field_first_name_value AS first_name,
         uln.field_last_name_value AS last_name,
         CAST(ubd.field_birth_date_value AS DATE) AS birthday,
-        DATE(FROM_UNIXTIME(usr.login)) AS last_login
+        DATE(FROM_UNIXTIME(usr.login)) AS last_login,
+        NULL AS pass
     FROM node_field_data entity
     JOIN node__field_leadership_ssp l
         ON l.entity_id = entity.nid AND l.deleted = '0'
