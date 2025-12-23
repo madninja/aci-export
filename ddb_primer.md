@@ -94,7 +94,14 @@ Additional club metadata:
 
 ### **Regions** (also nodes)
 `node_field_data WHERE type = 'ssp_region'`
+- `nid` (uid)
+- `title` (name)
+- `status` (0 = unpublished/inactive, 1 = published/active)
+
+Additional region metadata:
 - `node__field_region_number`
+
+**Note**: Like clubs, regions have a `status` field that indicates whether they are active. Include this when syncing to preserve inactive region information.
 
 ---
 
@@ -444,6 +451,17 @@ DDB can have duplicate leadership entries with the same composite key. Deduplica
 
 ### Inactive/unpublished clubs and regions
 Leadership records can reference clubs/regions with `status = 0` (unpublished/inactive). These entities exist in `node_field_data` but may not appear in queries that filter by status. Include all clubs/regions regardless of status when syncing to ensure foreign key integrity.
+
+When syncing clubs and regions, always include the `status` field (mapped to `active` boolean) so downstream systems can distinguish active from inactive entities:
+```sql
+SELECT
+    nd.nid as uid,
+    nd.title as name,
+    nd.status as active,  -- 1 = active, 0 = inactive
+    ...
+FROM node_field_data nd
+WHERE nd.type = 'ssp_club'  -- or 'ssp_region'
+```
 
 ---
 

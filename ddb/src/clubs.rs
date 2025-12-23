@@ -36,7 +36,8 @@ const FETCH_CLUBS_QUERY: &str = r#"
             nd.nid as uid,
             cn.field_club_number_value as number,
             nd.title as name,
-            nr.field_region_target_id as region
+            nr.field_region_target_id as region,
+            nd.status as active
         FROM node_field_data nd
         LEFT JOIN node__field_club_number cn ON cn.entity_id = nd.nid
         LEFT JOIN node__field_region nr ON nr.entity_id = nd.nid
@@ -56,6 +57,7 @@ pub struct Club {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<u64>,
+    pub active: bool,
 }
 
 pub mod db {

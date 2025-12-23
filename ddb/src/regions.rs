@@ -33,11 +33,12 @@ pub async fn by_number(pool: &MySqlPool, number: i32) -> Result<Option<Region>> 
 
 const FETCH_REGIONS_QUERY: &str = r#"
         select
-            region.entity_id as uid,  
+            region.entity_id as uid,
             region.field_region_number_value as number,
-            fields.title as name
+            fields.title as name,
+            fields.status as active
         from node__field_region_number region
-        inner join node_field_data fields on fields.nid = region.entity_id    
+        inner join node_field_data fields on fields.nid = region.entity_id
     "#;
 
 fn fetch_regions_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
@@ -51,6 +52,7 @@ pub struct Region {
     pub number: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    pub active: bool,
 }
 
 pub mod db {

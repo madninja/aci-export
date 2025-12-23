@@ -821,6 +821,7 @@ impl From<LocalClub> for Club {
             number: value.club_number,
             name: value.club_name.unwrap_or_default(),
             region: value.club_region_uid,
+            active: true, // LocalClub doesn't track status, default to active
         }
     }
 }
