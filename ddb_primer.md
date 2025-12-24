@@ -202,7 +202,66 @@ Aggregates per user:
 Chooses **one** active membership paragraph per user:
 - The one with the **latest join date**
 
-This defines the user’s “current club context.”
+This defines the user's "current club context."
+
+---
+
+## Full Membership History Queries
+
+For syncing complete membership history (not just current membership), query all membership paragraphs without date filtering:
+
+### Key differences from current membership queries:
+
+| Aspect | Current Membership | Full History |
+|--------|-------------------|--------------|
+| Date filter | `join_date <= NOW()`, `leave_date >= NOW()` | None |
+| Rows per user | One (via `active_pick`) | Multiple (all periods) |
+| Use case | Display current status | Sync to external system |
+| Sync key | User UID | Paragraph ID |
+
+### Paragraph ID as sync key:
+
+Each membership period has a unique paragraph ID (`paragraphs_item_field_data.id`). Use this for idempotent sync instead of user UID:
+
+```sql
+SELECT
+    p.id AS paragraph_id,  -- Sync key (unique per membership period)
+    CAST(p.parent_id AS UNSIGNED) AS user_uid,
+    fc.field_club_target_id AS club_uid,
+    DATE(jd.field_join_date_value) AS join_date,
+    DATE(ld.field_leave_date_value) AS leave_date,
+    ...
+FROM paragraphs_item_field_data p
+JOIN paragraph__field_club fc ON fc.entity_id = p.id AND fc.deleted = '0'
+LEFT JOIN paragraph__field_join_date jd ON jd.entity_id = p.id AND jd.deleted = '0'
+LEFT JOIN paragraph__field_leave_date ld ON ld.entity_id = p.id AND ld.deleted = '0'
+WHERE p.type = 'membership'
+  AND p.status = '1'
+```
+
+**Note**: `p.parent_id` is stored as VARCHAR in DDB, not an integer. Cast it explicitly: `CAST(p.parent_id AS UNSIGNED)`.
+
+### Member type from association table:
+
+Determine member type by which association table links the paragraph:
+
+```sql
+SELECT
+    p.id AS paragraph_id,
+    CAST(p.parent_id AS UNSIGNED) AS user_uid,
+    CASE
+        WHEN hc.entity_id IS NOT NULL THEN 'field_home_club'
+        WHEN am.entity_id IS NOT NULL THEN 'field_memberships'
+        ELSE 'unknown'
+    END AS member_type
+FROM paragraphs_item_field_data p
+LEFT JOIN user__field_home_club hc
+    ON hc.field_home_club_target_id = p.id AND hc.deleted = '0'
+LEFT JOIN user__field_memberships am
+    ON am.field_memberships_target_id = p.id AND am.deleted = '0'
+WHERE p.type = 'membership'
+  AND p.status = '1'
+```
 
 ---
 
@@ -391,7 +450,7 @@ WHERE entity.type = 'ssp_international_leadership'
 
 ## Query Guidance for LLMs
 
-### For membership queries:
+### For current membership queries:
 1. Always start from **active membership paragraphs**.
 2. Use paragraph-level join/leave dates for membership validity.
 3. Determine member type using:
@@ -407,6 +466,15 @@ WHERE entity.type = 'ssp_international_leadership'
    - all-member queries
 8. Exclude partner-only users when querying members.
 9. Alias birthdays as `birthday` and `partner_birthday`.
+
+### For full membership history queries:
+1. Query all membership paragraphs **without date filtering**.
+2. Use `paragraph_id` as the sync key (not user UID).
+3. Return **multiple rows per user** (one per membership period).
+4. Cast `parent_id` explicitly: `CAST(p.parent_id AS UNSIGNED) AS user_uid`.
+5. Join to association tables to determine member type.
+6. Deduplicate by `(user_uid, club_uid, join_date, member_type)` keeping lowest `paragraph_id`.
+7. Include partner UID from `user__field_primary_member` if needed.
 
 ### For queries involving partners:
 1. **Always JOIN to `users_field_data`** for basic user info (uid, mail, login)
@@ -448,6 +516,22 @@ DDB can have duplicate leadership entries with the same composite key. Deduplica
 - Club leadership: `(club_uid, user_id, role_uid, start_date)`
 - Region leadership: `(region_uid, user_id, role_uid, start_date)`
 - International leadership: `(user_id, role_uid, start_date)`
+
+### Duplicate membership paragraphs
+DDB contains duplicate membership paragraphs with the same `(user_uid, club_uid, join_date, member_type)` but different paragraph IDs. When syncing full membership history, deduplicate by keeping the lowest paragraph ID:
+
+```sql
+WITH deduped AS (
+    SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY user_uid, club_uid, join_date, member_type
+        ORDER BY paragraph_id
+    ) AS rn
+    FROM raw_membership_query
+)
+SELECT * FROM deduped WHERE rn = 1
+```
+
+This ensures deterministic sync behavior—the same paragraph ID is always chosen for duplicate membership periods.
 
 ### Inactive/unpublished clubs and regions
 Leadership records can reference clubs/regions with `status = 0` (unpublished/inactive). These entities exist in `node_field_data` but may not appear in queries that filter by status. Include all clubs/regions regardless of status when syncing to ensure foreign key integrity.
