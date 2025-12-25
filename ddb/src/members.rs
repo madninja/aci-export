@@ -109,6 +109,82 @@ pub async fn history_all(pool: &MySqlPool) -> Result<Vec<MembershipPeriod>> {
         .map_err(Into::into)
 }
 
+// ========== International Membership History (for portal sync) ==========
+
+/// International membership period (ssp_international_membership paragraph)
+/// Stored in portal with club_id = NULL and member_type = NULL
+#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+pub struct InternationalMembershipPeriod {
+    /// Drupal paragraph ID (unique identifier for this membership record)
+    pub paragraph_id: u64,
+    /// User's Drupal UID (from parent_id, can be NULL for orphaned paragraphs)
+    pub user_uid: Option<u64>,
+    /// Partner's Drupal UID (if any)
+    pub partner_uid: Option<u64>,
+    #[sqlx(default, try_from = "String")]
+    pub member_class: MemberClass,
+    /// Join date (can be NULL for malformed records)
+    pub join_date: Option<NaiveDate>,
+    pub leave_date: Option<NaiveDate>,
+}
+
+/// Fetch all international membership periods (full history, no date filtering)
+pub async fn international_history_all(pool: &MySqlPool) -> Result<Vec<InternationalMembershipPeriod>> {
+    sqlx::query_as::<_, InternationalMembershipPeriod>(FETCH_INTERNATIONAL_MEMBERSHIP_HISTORY_QUERY)
+        .fetch_all(pool)
+        .await
+        .map_err(Into::into)
+}
+
+/// Query for international membership history
+/// Paragraphs with type = 'ssp_international_membership'
+/// Dedupes by (user_uid, join_date) keeping lowest paragraph_id
+const FETCH_INTERNATIONAL_MEMBERSHIP_HISTORY_QUERY: &str = r#"
+WITH all_international AS (
+    SELECT
+        p.id AS paragraph_id,
+        CAST(p.parent_id AS UNSIGNED) AS user_uid,
+        CAST(md.partner_user_id AS UNSIGNED) AS partner_uid,
+        COALESCE(ttd.name, 'Regular') AS member_class,
+        DATE(fjd.field_join_date_value) AS join_date,
+        DATE(fld.field_leave_date_value) AS leave_date
+    FROM paragraphs_item_field_data p
+    INNER JOIN paragraph__field_join_date fjd
+        ON fjd.entity_id = p.id
+        AND fjd.deleted = '0'
+    LEFT JOIN paragraph__field_leave_date fld
+        ON fld.entity_id = p.id
+        AND fld.deleted = '0'
+    LEFT JOIN paragraph__field_membership_class mc
+        ON mc.entity_id = p.id
+        AND mc.deleted = '0'
+    LEFT JOIN taxonomy_term_field_data ttd
+        ON ttd.tid = mc.field_membership_class_target_id
+    LEFT JOIN z_member_search_main md
+        ON md.user_id = p.parent_id
+    WHERE p.status = '1'
+        AND p.type = 'ssp_international_membership'
+        AND fjd.field_join_date_value IS NOT NULL
+),
+dedupe_pick AS (
+    SELECT
+        user_uid, join_date,
+        MIN(paragraph_id) AS paragraph_id
+    FROM all_international
+    GROUP BY user_uid, join_date
+)
+SELECT
+    ai.paragraph_id,
+    ai.user_uid,
+    ai.partner_uid,
+    ai.member_class,
+    ai.join_date,
+    ai.leave_date
+FROM all_international ai
+INNER JOIN dedupe_pick dp
+    ON ai.paragraph_id = dp.paragraph_id
+"#;
+
 /// Query for full membership history - returns one row per membership paragraph
 /// No date filtering (includes lapsed/expired memberships)
 /// Dedupes by (user, club, join_date, member_type) keeping lowest paragraph_id
@@ -122,7 +198,7 @@ WITH all_memberships AS (
         COALESCE(ttd.name, 'Regular') AS member_class,
         CASE
             WHEN uhc.entity_id IS NOT NULL THEN 'regular'
-            WHEN uic.entity_id IS NOT NULL THEN 'regular'
+            WHEN uic.entity_id IS NOT NULL THEN 'intraclub'
             WHEN uac.entity_id IS NOT NULL THEN 'affiliate'
             ELSE 'regular'
         END AS member_type,
@@ -579,6 +655,7 @@ impl TryFrom<i32> for MemberStatus {
 pub enum MemberType {
     #[default]
     Regular,
+    Intraclub,
     Affiliate,
 }
 
@@ -586,6 +663,7 @@ impl fmt::Display for MemberType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Regular => f.write_str("regular"),
+            Self::Intraclub => f.write_str("intraclub"),
             Self::Affiliate => f.write_str("affiliate"),
         }
     }
@@ -596,6 +674,7 @@ impl TryFrom<String> for MemberType {
     fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
         match value.to_lowercase().as_str() {
             "field_home_club" | "regular" => Ok(Self::Regular),
+            "field_intraclub_memberships" | "intraclub" => Ok(Self::Intraclub),
             "field_memberships" | "affiliate" => Ok(Self::Affiliate),
             other => Err(sqlx::Error::decode(format!(
                 "unexpected member type {other}",
@@ -655,6 +734,7 @@ pub mod db {
         fn from(value: MemberType) -> Self {
             match value {
                 MemberType::Regular => Self::Regular,
+                MemberType::Intraclub => Self::Intraclub,
                 MemberType::Affiliate => Self::Affiliate,
             }
         }
