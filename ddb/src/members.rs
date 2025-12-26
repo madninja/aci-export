@@ -129,7 +129,9 @@ pub struct InternationalMembershipPeriod {
 }
 
 /// Fetch all international membership periods (full history, no date filtering)
-pub async fn international_history_all(pool: &MySqlPool) -> Result<Vec<InternationalMembershipPeriod>> {
+pub async fn international_history_all(
+    pool: &MySqlPool,
+) -> Result<Vec<InternationalMembershipPeriod>> {
     sqlx::query_as::<_, InternationalMembershipPeriod>(FETCH_INTERNATIONAL_MEMBERSHIP_HISTORY_QUERY)
         .fetch_all(pool)
         .await
@@ -733,8 +735,7 @@ pub mod db {
     impl From<MemberType> for app_db::member::MemberType {
         fn from(value: MemberType) -> Self {
             match value {
-                MemberType::Regular => Self::Regular,
-                MemberType::Intraclub => Self::Intraclub,
+                MemberType::Regular | MemberType::Intraclub => Self::Regular,
                 MemberType::Affiliate => Self::Affiliate,
             }
         }
