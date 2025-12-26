@@ -266,6 +266,7 @@ const FETCH_ALL_MEMBERS_QUERY: &str = r#"
     	alldata.last_name AS last_name,
         CAST(alldata.birthdate AS DATE) AS birthday,
         DATE(FROM_UNIXTIME(users_field_data.login)) AS last_login,
+        NULL AS pass,
 
        	CAST(alldata.partner_user_id AS UNSIGNED) AS partner_uid,
     	alldata.partner_email AS partner_email,
@@ -425,6 +426,7 @@ SELECT
   md.last_name                                 AS last_name,
   md.email                                     AS email,
   CAST(md.birthdate AS DATE)                   AS birthday,
+  NULL                                         AS pass,
 
   /* ===================== MEMBER INFORMATION FIELDS ===================== */
   CASE
