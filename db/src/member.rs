@@ -80,21 +80,11 @@ const FETCH_MEMBERS_QUERY: &str = r#"
         email,
         first_name,
         last_name,
-        birthday,
-        state,
-        phone_mobile,
-        phone_home,
-        last_login,
 
         partner.uid as partner_uid,
         partner.email as partner_email,
-        partner.first_name as partner_fist_name,
+        partner.first_name as partner_first_name,
         partner.last_name as partner_last_name,
-        partner.birthday as partner_birthday,
-        partner.state as partner_state,
-        partner.phone_mobile as partner_phone_mobile,
-        partner.phone_home as partner_phone_home,
-        partner.last_login as partner_last_login,
 
         member.member_class,
         member.member_type,
@@ -109,8 +99,8 @@ const FETCH_MEMBERS_QUERY: &str = r#"
 
     FROM
         members member
-        LEFT JOIN users user ON user.id = member.primary_user
-        LEFT JOIN users partner ON user.id= member.partner_user
+        LEFT JOIN users "user" ON "user".id = member.primary_user
+        LEFT JOIN users partner ON partner.id = member.partner_user
         LEFT JOIN clubs club ON club.number = member.local_club
         LEFT JOIN regions region ON region.uid = club.region
 "#;
@@ -227,11 +217,7 @@ pub mod mailing_address {
         sqlx::QueryBuilder::new(
             r#"
             SELECT
-                user,
-                street_address,
-                street_address_2,
-                zip_code,
-                city,
+                user_id,
                 state,
                 country
             FROM addresses
@@ -373,12 +359,6 @@ pub struct Member {
 pub struct Address {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<i64>,
-    pub street_address: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub street_address_2: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub zip_code: Option<String>,
-    pub city: Option<String>,
     pub state: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
@@ -386,19 +366,10 @@ pub struct Address {
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 struct PartnerUser {
-    partner_id: Option<String>,
     partner_uid: Option<i64>,
     partner_email: Option<String>,
     partner_first_name: Option<String>,
     partner_last_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    partner_birthday: Option<chrono::NaiveDate>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub partner_phone_mobile: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub partner_phone_home: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    partner_last_login: Option<chrono::NaiveDate>,
 }
 
 impl From<PartnerUser> for Option<user::User> {
@@ -411,10 +382,6 @@ impl From<PartnerUser> for Option<user::User> {
                 email: partner_email,
                 first_name: value.partner_first_name,
                 last_name: value.partner_last_name,
-                birthday: value.partner_birthday,
-                phone_mobile: value.partner_phone_mobile,
-                phone_home: value.partner_phone_home,
-                last_login: value.partner_last_login,
             })
         } else {
             None

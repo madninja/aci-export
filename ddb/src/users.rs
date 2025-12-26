@@ -86,10 +86,6 @@ pub mod db {
                 email: value.email,
                 first_name: value.first_name,
                 last_name: value.last_name,
-                birthday: value.birthday,
-                phone_mobile: None,
-                phone_home: None,
-                last_login: value.last_login,
             }
         }
     }

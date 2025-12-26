@@ -775,10 +775,6 @@ pub mod db {
         pub fn to_db_address_for_member(self, member: &Member) -> app_db::address::Address {
             app_db::address::Address {
                 user_id: app_db::user::id_for_email(&member.primary.email),
-                street_address: self.street_address,
-                street_address_2: self.street_address_2,
-                zip_code: self.zip_code,
-                city: self.city,
                 state: self.state,
                 country: self.country,
             }

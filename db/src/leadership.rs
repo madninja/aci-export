@@ -107,10 +107,6 @@ const FETCH_LEADERSHIP_QUERY: &str = r#"
         u.email,
         u.first_name,
         u.last_name,
-        u.birthday,
-        u.phone_mobile,
-        u.phone_home,
-        u.last_login,
 
         r.uid as role_uid,
         r.title as role_title

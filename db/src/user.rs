@@ -11,14 +11,6 @@ pub struct User {
     pub first_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub birthday: Option<chrono::NaiveDate>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub phone_mobile: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub phone_home: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_login: Option<chrono::NaiveDate>,
 }
 
 pub const FETCH_USER_QUERY: &str = r#"
@@ -27,11 +19,7 @@ pub const FETCH_USER_QUERY: &str = r#"
         uid,
         email,
         first_name,
-        last_name,
-        birthday,
-        phone_mobile,
-        phone_home,
-        last_login
+        last_name
     FROM
         users
 "#;
@@ -79,31 +67,25 @@ pub async fn upsert_many(pool: &PgPool, users: &[User]) -> Result<u64> {
             let result = sqlx::QueryBuilder::new(
                 r#"INSERT INTO users (
                     id,
-                    email,
                     uid,
+                    email,
                     first_name,
-                    last_name,
-                    birthday,
-                    last_login
+                    last_name
                 ) "#,
             )
             .push_values(chunk, |mut b, user| {
                 b.push_bind(&user.id)
-                    .push_bind(&user.email)
                     .push_bind(user.uid)
+                    .push_bind(&user.email)
                     .push_bind(&user.first_name)
-                    .push_bind(&user.last_name)
-                    .push_bind(user.birthday)
-                    .push_bind(user.last_login);
+                    .push_bind(&user.last_name);
             })
             .push(
                 r#"ON CONFLICT(id) DO UPDATE SET
-                email = excluded.email,
                 uid = excluded.uid,
+                email = excluded.email,
                 first_name = excluded.first_name,
-                last_name = excluded.last_name,
-                birthday = excluded.birthday,
-                last_login = excluded.last_login
+                last_name = excluded.last_name
             "#,
             )
             .build()

@@ -5,10 +5,6 @@ use sqlx::{PgPool, Postgres};
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 pub struct Address {
     pub user_id: String,
-    pub street_address: Option<String>,
-    pub street_address_2: Option<String>,
-    pub zip_code: Option<String>,
-    pub city: Option<String>,
     pub state: Option<String>,
     pub country: Option<String>,
 }
@@ -16,10 +12,6 @@ pub struct Address {
 pub const FETCH_ADDRESS_QUERY: &str = r#"
     SELECT
         user_id,
-        street_address,
-        street_address_2,
-        zip_code,
-        city,
         state,
         country
     FROM
@@ -52,29 +44,17 @@ pub async fn upsert_many(pool: &PgPool, addresses: &[Address]) -> Result<u64> {
             let result = sqlx::QueryBuilder::new(
                 r#"INSERT INTO addresses (
                     user_id,
-                    street_address,
-                    street_address_2,
-                    zip_code,
-                    city,
                     state,
                     country
                 ) "#,
             )
             .push_values(chunk, |mut b, address| {
                 b.push_bind(&address.user_id)
-                    .push_bind(&address.street_address)
-                    .push_bind(&address.street_address_2)
-                    .push_bind(&address.zip_code)
-                    .push_bind(&address.city)
                     .push_bind(&address.state)
                     .push_bind(&address.country);
             })
             .push(
                 r#"ON CONFLICT(user_id) DO UPDATE SET
-                street_address = excluded.street_address,
-                street_address_2 = excluded.street_address_2,
-                zip_code = excluded.zip_code,
-                city = excluded.city,
                 state = excluded.state,
                 country = excluded.country
             "#,
