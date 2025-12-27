@@ -22,6 +22,7 @@ pub mod clubs;
 pub mod international;
 pub mod members;
 pub mod regions;
+pub mod standing_committees;
 pub mod users;
 
 pub fn print_json<T: ?Sized + serde::Serialize>(value: &T) -> Result {
@@ -47,6 +48,7 @@ pub enum DdbCommand {
     Members(members::Cmd),
     Clubs(clubs::Cmd),
     Regions(regions::Cmd),
+    StandingCommittees(standing_committees::Cmd),
     International(international::Cmd),
 }
 
@@ -57,6 +59,7 @@ impl DdbCommand {
             Self::Members(cmd) => cmd.run().await,
             Self::Clubs(cmd) => cmd.run().await,
             Self::Regions(cmd) => cmd.run().await,
+            Self::StandingCommittees(cmd) => cmd.run().await,
             Self::International(cmd) => cmd.run().await,
         }
     }

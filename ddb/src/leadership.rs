@@ -51,8 +51,8 @@ impl From<RoleFromRow> for Role {
 const FETCH_LEADERSHIP_BASE: &str = r#"
     SELECT
         entity.nid AS entity_uid,
-        role_term.tid AS role_uid,
-        role_term.name AS role_title,
+        CAST(COALESCE(role_term.tid, 0) AS UNSIGNED) AS role_uid,
+        COALESCE(role_term.name, 'Chair') AS role_title,
         DATE(start.field_start_date_value) AS start_date,
         DATE(end.field_end_date_value) AS end_date,
         usr.uid AS uid,
@@ -81,8 +81,15 @@ const FETCH_LEADERSHIP_BASE: &str = r#"
     WHERE
 "#;
 
-fn apply_date_filter(query: &mut QueryBuilder<MySql>, filter: &DateFilter) {
+fn apply_date_filter(query: &mut QueryBuilder<MySql>, filter: &DateFilter, require_role: bool) {
+    // Require start_date to be present (skip invalid records)
     query.push("start.field_start_date_value IS NOT NULL");
+
+    // For clubs/regions/international, also require role to be present
+    if require_role {
+        query.push(" AND role_term.tid IS NOT NULL");
+    }
+
     match filter {
         DateFilter::Current => {
             query.push(" AND DATE(start.field_start_date_value) <= CURRENT_DATE");
@@ -103,9 +110,12 @@ fn apply_date_filter(query: &mut QueryBuilder<MySql>, filter: &DateFilter) {
     }
 }
 
-fn fetch_leadership_query<'builder>(filter: &DateFilter) -> QueryBuilder<'builder, MySql> {
+fn fetch_leadership_query<'builder>(
+    filter: &DateFilter,
+    require_role: bool,
+) -> QueryBuilder<'builder, MySql> {
     let mut query = QueryBuilder::new(FETCH_LEADERSHIP_BASE);
-    apply_date_filter(&mut query, filter);
+    apply_date_filter(&mut query, filter, require_role);
     query
 }
 
@@ -117,7 +127,9 @@ async fn fetch_leadership_for_type(
 ) -> Result<Vec<Leadership>> {
     use futures::TryFutureExt;
 
-    let mut query = fetch_leadership_query(&filter);
+    // Standing committees don't have explicit roles - they use implicit "Chair" role
+    let require_role = entity_type != "ssp_standing_committees";
+    let mut query = fetch_leadership_query(&filter, require_role);
 
     if let Some(id) = entity_id {
         query.push(" AND entity.nid = ").push_bind(id);
@@ -172,6 +184,21 @@ pub async fn for_region_by_number(
 
 pub async fn for_international(pool: &MySqlPool, filter: DateFilter) -> Result<Vec<Leadership>> {
     fetch_leadership_for_type(pool, "ssp_international_leadership", None, filter).await
+}
+
+pub async fn for_standing_committee(
+    pool: &MySqlPool,
+    uid: u64,
+    filter: DateFilter,
+) -> Result<Vec<Leadership>> {
+    fetch_leadership_for_type(pool, "ssp_standing_committees", Some(uid), filter).await
+}
+
+pub async fn for_all_standing_committees(
+    pool: &MySqlPool,
+    filter: DateFilter,
+) -> Result<Vec<Leadership>> {
+    fetch_leadership_for_type(pool, "ssp_standing_committees", None, filter).await
 }
 
 pub mod db {

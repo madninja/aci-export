@@ -8,6 +8,7 @@ pub mod club;
 pub mod leadership;
 pub mod member;
 pub mod region;
+pub mod standing_committee;
 pub mod user;
 
 pub(crate) const DB_INSERT_CHUNK_SIZE: usize = 1000;

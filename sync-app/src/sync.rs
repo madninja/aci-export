@@ -2,7 +2,7 @@ use crate::{
     Result,
     settings::{AciDatabaseSettings, AppSettings},
 };
-use db::{address, brn, club, leadership, member, region, user};
+use db::{address, brn, club, leadership, member, region, standing_committee, user};
 use itertools::Itertools;
 use serde::Serialize;
 use sqlx::PgPool;
@@ -378,6 +378,89 @@ pub async fn retain_international_leadership(
     Ok(())
 }
 
+// ========== Standing Committee Sync ==========
+
+pub async fn upsert_standing_committees<I>(
+    db: &PgPool,
+    committees: I,
+) -> Result<(
+    (String, SyncStats),
+    Vec<standing_committee::StandingCommittee>,
+)>
+where
+    I: IntoIterator<Item = ddb::standing_committees::StandingCommittee>,
+{
+    let start = Instant::now();
+    let db_committees = committees
+        .into_iter()
+        .map(standing_committee::StandingCommittee::from)
+        .collect_vec();
+    let upserted = standing_committee::upsert_many(db, &db_committees).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(upserted, duration, "upserted standing committees");
+    Ok((
+        (
+            "standing_committees".to_string(),
+            SyncStats::new(upserted, duration),
+        ),
+        db_committees,
+    ))
+}
+
+pub async fn retain_standing_committees(
+    db: &PgPool,
+    stats: &mut (String, SyncStats),
+    db_committees: &[standing_committee::StandingCommittee],
+) -> Result<()> {
+    let start = Instant::now();
+    let deleted = standing_committee::retain(db, db_committees).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(deleted, duration, "gc standing committees");
+    stats.1.deleted = deleted;
+    stats.1.duration += duration;
+    Ok(())
+}
+
+// ========== Standing Committee Leadership Sync ==========
+
+pub async fn upsert_standing_committee_leadership<I>(
+    db: &PgPool,
+    leadership: I,
+) -> Result<((String, SyncStats), Vec<standing_committee::Leadership>)>
+where
+    I: IntoIterator<Item = ddb::leadership::Leadership>,
+{
+    let start = Instant::now();
+    let db_leadership = leadership
+        .into_iter()
+        .map(standing_committee::Leadership::from)
+        .collect_vec();
+    let upserted = standing_committee::upsert_leadership(db, &db_leadership).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(upserted, duration, "upserted standing committee leadership");
+    Ok((
+        (
+            "leadership_standing_committee".to_string(),
+            SyncStats::new(upserted, duration),
+        ),
+        db_leadership,
+    ))
+}
+
+pub async fn retain_standing_committee_leadership(
+    db: &PgPool,
+    stats: &mut (String, SyncStats),
+    db_leadership: &[standing_committee::Leadership],
+) -> Result<()> {
+    let start = Instant::now();
+    let deleted = standing_committee::retain_leadership(db, db_leadership).await?;
+    let duration = start.elapsed().as_secs();
+    tracing::info!(deleted, duration, "gc standing committee leadership");
+    stats.1.deleted = deleted;
+    stats.1.duration += duration;
+    Ok(())
+}
+
 #[tracing::instrument(skip_all, name = "sync")]
 pub async fn run(
     app_settings: &AppSettings,
@@ -391,6 +474,7 @@ pub async fn run(
 
     let ddb_regions = ddb::regions::all(&ddb).await?;
     let ddb_clubs = ddb::clubs::all(&ddb).await?;
+    let ddb_standing_committees = ddb::standing_committees::all(&ddb).await?;
     let ddb_members = ddb::members::all(&ddb).await?;
     let db_brns = ddb_members
         .iter()
@@ -405,6 +489,9 @@ pub async fn run(
         ddb::leadership::for_all_regions(&ddb, ddb::leadership::DateFilter::All).await?;
     let ddb_international_leadership =
         ddb::leadership::for_international(&ddb, ddb::leadership::DateFilter::All).await?;
+    let ddb_standing_committee_leadership =
+        ddb::leadership::for_all_standing_committees(&ddb, ddb::leadership::DateFilter::All)
+            .await?;
 
     // Collect all users from members AND leadership records
     let ddb_users = ddb_members
@@ -418,6 +505,11 @@ pub async fn run(
                 .iter()
                 .map(|lead| lead.user.clone()),
         )
+        .chain(
+            ddb_standing_committee_leadership
+                .iter()
+                .map(|lead| lead.user.clone()),
+        )
         .unique_by(|user| user.uid)
         .collect_vec();
 
@@ -426,6 +518,7 @@ pub async fn run(
         .iter()
         .chain(ddb_region_leadership.iter())
         .chain(ddb_international_leadership.iter())
+        .chain(ddb_standing_committee_leadership.iter())
         .map(|lead| lead.role.clone())
         .unique_by(|role| role.uid)
         .collect_vec();
@@ -435,16 +528,20 @@ pub async fn run(
 
     let (mut region_stats, db_regions) = upsert_regions(&db, ddb_regions).await?;
     let (mut club_stats, db_clubs) = upsert_clubs(&db, ddb_clubs).await?;
+    let (mut standing_committee_stats, db_standing_committees) =
+        upsert_standing_committees(&db, ddb_standing_committees).await?;
     let (mut user_stats, db_users) = upsert_users(&db, ddb_users).await?;
     let (mut address_stats, db_addresses) =
         upsert_addresses(&db, &ddb_members, &mut ddb_addresses).await?;
     let (mut member_stats, db_members) = upsert_members(&db, ddb_members).await?;
     let (mut brn_stats, db_brns) = upsert_brns(&db, &db_brns).await?;
 
-    // Upsert leadership (depends on roles, clubs, regions, users)
-    // Filter to only leadership records referencing existing clubs/regions
+    // Upsert leadership (depends on roles, clubs, regions, standing committees, users)
+    // Filter to only leadership records referencing existing entities
     let club_uids: std::collections::HashSet<i64> = db_clubs.iter().map(|c| c.uid).collect();
     let region_uids: std::collections::HashSet<i64> = db_regions.iter().map(|r| r.uid).collect();
+    let standing_committee_uids: std::collections::HashSet<i64> =
+        db_standing_committees.iter().map(|sc| sc.uid).collect();
 
     let (mut club_leadership_stats, db_club_leadership) = upsert_club_leadership(
         &db,
@@ -476,9 +573,25 @@ pub async fn run(
     .await?;
     let (mut international_leadership_stats, db_international_leadership) =
         upsert_international_leadership(&db, ddb_international_leadership).await?;
+    let (mut standing_committee_leadership_stats, db_standing_committee_leadership) =
+        upsert_standing_committee_leadership(
+            &db,
+            ddb_standing_committee_leadership.into_iter().filter(|l| {
+                let exists = standing_committee_uids.contains(&(l.entity_uid as i64));
+                if !exists {
+                    tracing::warn!(
+                        standing_committee_uid = l.entity_uid,
+                        "leadership references non-existent standing committee"
+                    );
+                }
+                exists
+            }),
+        )
+        .await?;
 
     retain_clubs(&db, &mut club_stats, &db_clubs).await?;
     retain_regions(&db, &mut region_stats, &db_regions).await?;
+    retain_standing_committees(&db, &mut standing_committee_stats, &db_standing_committees).await?;
     retain_brns(&db, &mut brn_stats, &db_brns).await?;
     retain_members(&db, &mut member_stats, &db_members).await?;
 
@@ -489,6 +602,12 @@ pub async fn run(
         &db,
         &mut international_leadership_stats,
         &db_international_leadership,
+    )
+    .await?;
+    retain_standing_committee_leadership(
+        &db,
+        &mut standing_committee_leadership_stats,
+        &db_standing_committee_leadership,
     )
     .await?;
 
@@ -504,12 +623,14 @@ pub async fn run(
         address_stats,
         region_stats,
         club_stats,
+        standing_committee_stats,
         user_stats,
         member_stats,
         role_stats,
         club_leadership_stats,
         region_leadership_stats,
         international_leadership_stats,
+        standing_committee_leadership_stats,
     ]
     .into_iter()
     .collect();

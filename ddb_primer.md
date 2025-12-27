@@ -383,10 +383,30 @@ A leadership position is currently active if:
 Leadership data exists for multiple node types:
 - **ssp_club** (126 entities) - clubs and intraclubs
 - **ssp_region** (13 entities) - regions
-- **ssp_standing_committees** (20 entities) - committees
+- **ssp_standing_committees** (20 entities) - standing committees
 - **ssp_international_leadership** (1 entity) - international leadership
 
-When querying leadership for clubs/regions specifically, **always filter by node type** to exclude committees and international leadership.
+When querying leadership for specific entity types, **always filter by node type** to exclude other leadership types.
+
+---
+
+## Standing Committees
+
+Standing committees are organizational committees that can have leadership like clubs and regions.
+
+### **Standing Committees** (nodes)
+`node_field_data WHERE type = 'ssp_standing_committees'`
+- `nid` (uid)
+- `title` (name)
+- `status` (0 = inactive, 1 = active)
+
+### Standing Committee Leadership
+Uses the same `node__field_leadership_ssp` pattern as clubs and regions. Query with:
+```sql
+WHERE entity.type = 'ssp_standing_committees'
+```
+
+See Leadership Model section for full query patterns.
 
 ### Querying leadership:
 
