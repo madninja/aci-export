@@ -28,6 +28,10 @@ struct ClubOrRegion {
 
 impl Cmd {
     pub async fn run(&self, settings: Settings) -> Result {
+        // Validate API key and list exist before creating the job
+        let client = mailchimp::client::from_api_key(&self.api_key)?;
+        mailchimp::lists::get(&client, &self.list).await?;
+
         let to_create = Job {
             name: self.name.clone(),
             club: self.club_or_region.club,
