@@ -267,6 +267,16 @@ const FETCH_ALL_MEMBERS_QUERY: &str = r#"
         CAST(alldata.birthdate AS DATE) AS birthday,
         DATE(FROM_UNIXTIME(users_field_data.login)) AS last_login,
         NULL AS pass,
+        NULL AS gender,
+        NULL AS race_tid,
+        NULL AS communication_preference,
+        NULL AS blue_beret_mail,
+        NULL AS publish_info,
+        NULL AS special_needs,
+        NULL AS ada_parking,
+        NULL AS member_notes,
+        NULL AS military_status,
+        NULL AS first_responder_status,
 
        	CAST(alldata.partner_user_id AS UNSIGNED) AS partner_uid,
     	alldata.partner_email AS partner_email,
@@ -427,6 +437,16 @@ SELECT
   md.email                                     AS email,
   CAST(md.birthdate AS DATE)                   AS birthday,
   NULL                                         AS pass,
+  NULL                                         AS gender,
+  NULL                                         AS race_tid,
+  NULL                                         AS communication_preference,
+  NULL                                         AS blue_beret_mail,
+  NULL                                         AS publish_info,
+  NULL                                         AS special_needs,
+  NULL                                         AS ada_parking,
+  NULL                                         AS member_notes,
+  NULL                                         AS military_status,
+  NULL                                         AS first_responder_status,
 
   /* ===================== MEMBER INFORMATION FIELDS ===================== */
   CASE

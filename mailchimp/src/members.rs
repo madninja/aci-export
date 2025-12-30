@@ -12,7 +12,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::RwLock;
-use tokio_retry2::{Retry, RetryError};
+use tokio_retry2::Retry;
 
 pub fn all(client: &Client, list_id: &str, query: MembersQuery) -> Stream<Member> {
     client.fetch_stream::<MembersQuery, MembersResponse>(
@@ -151,7 +151,7 @@ pub async fn upsert_many(
         .try_for_each_concurrent(8, |(client, members, processed, retries)| async move {
             let response = Retry::spawn_notify(
                 retries,
-                || batch_upsert(&client, list_id, &members).map_err(RetryError::transient),
+                || batch_upsert(&client, list_id, &members).map_err(Error::into_retry),
                 |err, sleep| tracing::warn!(%err, sleep = sleep.as_secs(), "batch member update"),
             )
             .await?;
@@ -264,7 +264,7 @@ pub mod tags {
                 }
                 Retry::spawn_notify(
                     retries,
-                    || batch.run(&client, true).map_err(RetryError::transient),
+                    || batch.run(&client, true).map_err(Error::into_retry),
                     |err, sleep| tracing::warn!(%err, sleep = sleep.as_secs(), "batch tag update"),
                 )
                 .await?;

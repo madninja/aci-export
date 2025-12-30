@@ -19,7 +19,7 @@ impl Cmd {
             Job::all(&db).await?
         };
 
-        let map = Job::sync_many(jobs, settings.ddb).await?;
+        let map = Job::sync_many(jobs, settings.ddb).await;
         print_json(&map)
     }
 }

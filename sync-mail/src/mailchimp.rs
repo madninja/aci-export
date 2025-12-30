@@ -198,34 +198,36 @@ impl Job {
     }
 
     /// Run sync for multiple jobs in parallel, returning results keyed by job ID
+    /// Jobs that fail are logged but don't stop other jobs from syncing
     pub async fn sync_many(
         jobs: Vec<Self>,
         ddb_settings: AciDatabaseSettings,
-    ) -> Result<std::collections::HashMap<i64, JobSyncResult>> {
-        use futures::{StreamExt, TryStreamExt};
+    ) -> std::collections::HashMap<i64, JobSyncResult> {
+        use futures::StreamExt;
 
-        let results = futures::stream::iter(jobs)
+        futures::stream::iter(jobs)
             .map(|job| {
                 let ddb_settings = ddb_settings.clone();
                 async move {
                     let name = job.name.clone();
-                    job.sync(ddb_settings).await.map(|(deleted, upserted)| {
-                        (
-                            job.id,
-                            JobSyncResult {
-                                name,
-                                deleted,
-                                upserted,
-                            },
-                        )
-                    })
+                    let id = job.id;
+                    match job.sync(ddb_settings).await {
+                        Ok((deleted, upserted)) => {
+                            Some((id, JobSyncResult { name, deleted, upserted }))
+                        }
+                        Err(e) => {
+                            tracing::error!(job_id = id, job_name = name, "sync failed: {e}");
+                            None
+                        }
+                    }
                 }
             })
             .buffered(20)
-            .try_collect::<Vec<_>>()
-            .await?;
-
-        Ok(results.into_iter().collect())
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     #[tracing::instrument(skip_all, name = "sync", fields(name = self.name, id = self.id))]

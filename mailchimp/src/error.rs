@@ -50,4 +50,31 @@ impl Error {
     pub fn merge_field<S: ToString>(msg: S) -> Self {
         Self::InvalidMergeField(msg.to_string())
     }
+
+    /// Returns true if this error is transient and the operation should be retried
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            // 401 Unauthorized - invalid API key, don't retry
+            // 403 Forbidden - don't retry
+            // 404 Not Found - don't retry
+            Self::Mailchimp(err) if matches!(err.status, 401 | 403 | 404) => false,
+            // Malformed API key - don't retry
+            Self::MalformedAPIKey => false,
+            // Other mailchimp errors (rate limits, server errors) - retry
+            Self::Mailchimp(_) => true,
+            // Request errors (network issues, timeouts) - retry
+            Self::Request(_) => true,
+            // All other errors - don't retry
+            _ => false,
+        }
+    }
+
+    /// Convert this error into a RetryError based on whether it's retryable
+    pub fn into_retry(self) -> tokio_retry2::RetryError<Self> {
+        if self.is_retryable() {
+            tokio_retry2::RetryError::transient(self)
+        } else {
+            tokio_retry2::RetryError::permanent(self)
+        }
+    }
 }
