@@ -321,9 +321,17 @@ pub struct Member {
         deserialize_with = "deserialize_null_string::deserialize"
     )]
     pub full_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::deserialize_member_status::deserialize"
+    )]
     pub status_if_new: Option<MemberStatus>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::deserialize_member_status::deserialize"
+    )]
     pub status: Option<MemberStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_fields: Option<HashMap<String, serde_json::Value>>,

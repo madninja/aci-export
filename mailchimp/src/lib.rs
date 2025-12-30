@@ -466,6 +466,37 @@ pub mod deserialize_null_string {
     }
 }
 
+/// Deserializer for Option<MemberStatus> that treats empty strings as None
+pub mod deserialize_member_status {
+    use crate::members::MemberStatus;
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<MemberStatus>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // First try to deserialize as Option<String> to handle empty strings
+        let opt: Option<String> = Option::deserialize(deserializer)?;
+        match opt {
+            None => Ok(None),
+            Some(s) if s.is_empty() => Ok(None),
+            Some(s) => {
+                // Parse the string into MemberStatus
+                match s.as_str() {
+                    "subscribed" => Ok(Some(MemberStatus::Subscribed)),
+                    "unsubscribed" => Ok(Some(MemberStatus::Unsubscribed)),
+                    "cleaned" => Ok(Some(MemberStatus::Cleaned)),
+                    "pending" => Ok(Some(MemberStatus::Pending)),
+                    "transactional" => Ok(Some(MemberStatus::Transactional)),
+                    "archived" => Ok(Some(MemberStatus::Archived)),
+                    "noop" => Ok(Some(MemberStatus::Noop)),
+                    _ => Ok(None), // Unknown status treated as None
+                }
+            }
+        }
+    }
+}
+
 pub fn is_default<T>(value: &T) -> bool
 where
     T: PartialEq + Default,
