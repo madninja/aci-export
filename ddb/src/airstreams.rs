@@ -5,7 +5,7 @@
 
 use crate::Result;
 use chrono::NaiveDate;
-use sqlx::{mysql::MySql, MySqlPool};
+use sqlx::{MySqlPool, mysql::MySql};
 
 /// Airstream ownership record from Drupal database
 /// Each row represents an ownership period (paragraph entity)

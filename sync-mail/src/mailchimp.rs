@@ -212,9 +212,14 @@ impl Job {
                     let name = job.name.clone();
                     let id = job.id;
                     match job.sync(ddb_settings).await {
-                        Ok((deleted, upserted)) => {
-                            Some((id, JobSyncResult { name, deleted, upserted }))
-                        }
+                        Ok((deleted, upserted)) => Some((
+                            id,
+                            JobSyncResult {
+                                name,
+                                deleted,
+                                upserted,
+                            },
+                        )),
                         Err(e) => {
                             tracing::error!(job_id = id, job_name = name, "sync failed: {e}");
                             None

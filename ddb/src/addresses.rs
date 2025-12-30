@@ -4,7 +4,7 @@
 //! Each user can have multiple addresses with primary/mailing flags.
 
 use crate::Result;
-use sqlx::{mysql::MySql, MySqlPool};
+use sqlx::{MySqlPool, mysql::MySql};
 
 /// User address record from Drupal database
 /// Each row represents an address paragraph entity
