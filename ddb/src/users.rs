@@ -1,6 +1,15 @@
 use crate::Result;
 use sqlx::{MySqlPool, mysql::MySql};
 
+/// Drupal user data.
+///
+/// **IMPORTANT**: This struct is flattened via `#[sqlx(flatten)]` in multiple queries.
+/// When adding fields, you MUST also update these queries to include the new column:
+/// - `users.rs`: `fetch_user_query()` - selects actual column values
+/// - `leadership.rs`: `FETCH_LEADERSHIP_BASE` - uses NULL placeholders
+/// - `members.rs`: `FETCH_ALL_MEMBERS_QUERY` - uses NULL placeholders
+/// - `members.rs`: `FETCH_CLUB_MEMBERS_QUERY` - uses NULL placeholders
+/// - `members.rs`: `impl From<PartnerUser> for Option<User>` - manual construction
 #[derive(Debug, sqlx::FromRow, serde::Serialize, Clone)]
 pub struct User {
     pub uid: u64,
