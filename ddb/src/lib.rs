@@ -6,6 +6,7 @@ pub mod airstreams;
 pub mod clubs;
 pub mod leadership;
 pub mod members;
+pub mod races;
 pub mod regions;
 pub mod standing_committees;
 pub mod users;
