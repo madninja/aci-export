@@ -71,7 +71,8 @@ const FETCH_LEADERSHIP_BASE: &str = r#"
         NULL AS ada_parking,
         NULL AS member_notes,
         NULL AS military_status,
-        NULL AS first_responder_status
+        NULL AS first_responder_status,
+        CASE WHEN usr.status = 1 THEN TRUE ELSE FALSE END AS active
     FROM node_field_data entity
     JOIN node__field_leadership_ssp l
         ON l.entity_id = entity.nid AND l.deleted = '0'

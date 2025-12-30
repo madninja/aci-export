@@ -39,6 +39,8 @@ pub struct User {
     pub military_status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub first_responder_status: Option<String>,
+    /// Account status: true = active (can log in), false = blocked
+    pub active: bool,
 }
 
 fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
@@ -61,7 +63,8 @@ fn fetch_user_query<'builder>() -> sqlx::QueryBuilder<'builder, MySql> {
                 CASE WHEN ufap.field_ada_parking_value = 1 THEN TRUE ELSE FALSE END AS ada_parking,
                 ufspe.field_spe_value AS member_notes,
                 ufmil.field_military_value AS military_status,
-                uffr.field_first_responder_value AS first_responder_status
+                uffr.field_first_responder_value AS first_responder_status,
+                CASE WHEN users_field_data.status = 1 THEN TRUE ELSE FALSE END AS active
             FROM
                 users_field_data
                 LEFT JOIN user__field_first_name ON users_field_data.uid = user__field_first_name.entity_id

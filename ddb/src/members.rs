@@ -277,6 +277,7 @@ const FETCH_ALL_MEMBERS_QUERY: &str = r#"
         NULL AS member_notes,
         NULL AS military_status,
         NULL AS first_responder_status,
+        CASE WHEN users_field_data.status = 1 THEN TRUE ELSE FALSE END AS active,
 
        	CAST(alldata.partner_user_id AS UNSIGNED) AS partner_uid,
     	alldata.partner_email AS partner_email,
@@ -447,6 +448,7 @@ SELECT
   NULL                                         AS member_notes,
   NULL                                         AS military_status,
   NULL                                         AS first_responder_status,
+  CASE WHEN u.status = 1 THEN TRUE ELSE FALSE END AS active,
 
   /* ===================== MEMBER INFORMATION FIELDS ===================== */
   CASE
@@ -1011,6 +1013,7 @@ impl From<PartnerUser> for Option<User> {
                 member_notes: None,
                 military_status: None,
                 first_responder_status: None,
+                active: true, // Partners inherit active status from primary
             })
         } else {
             None
